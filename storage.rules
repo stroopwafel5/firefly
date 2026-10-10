@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Passport scans: only the uploader can write/read; Different Route gets a signed link by e-mail.
+    match /bookings/{uid}/{bookingId}/{file} {
+      allow create: if request.auth != null && request.auth.uid == uid && request.resource.size < 10 * 1024 * 1024;
+      allow read: if request.auth != null && request.auth.uid == uid;
+    }
+    match /profilePhotos/{uid}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

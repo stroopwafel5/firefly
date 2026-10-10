@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "module": "commonjs", "target": "ES2022", "lib": ["ES2022", "DOM"], "strict": true, "esModuleInterop": true,
+    "noEmit": true, "skipLibCheck": true,
+    "typeRoots": ["/opt/node-tools/node_modules/@types"], "types": ["node"]
+  },
+  "include": ["../functions/src/**/*.ts", "./functions-shims.d.ts"]
+}

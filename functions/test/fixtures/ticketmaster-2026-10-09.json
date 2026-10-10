@@ -1,0 +1,700 @@
+{
+ "_note": "Recorded from the live Ticketmaster Discovery API (app.ticketmaster.com/discovery/v2/events.json) on 9 Oct 2026 with Firefly's key and the same query parameters the server sends. Only the fields Firefly reads are kept; image lists are trimmed to the images that were inspected. Ticketmaster also tagged the London Eye and Madame Tussauds listings 'REDIRECT EVENT / DO NOT SELL' (field not recorded).",
+ "london": {
+  "query": {
+   "lat": 51.5074,
+   "lon": -0.1278,
+   "radiusKm": 30,
+   "from": "2026-10-16",
+   "to": "2026-10-25"
+  },
+  "page": {
+   "totalElements": 2038
+  },
+  "_embedded": {
+   "events": [
+    {
+     "id": "LvZ18QtliQ8Zb9LkPuv-H",
+     "name": "Hine After Hours",
+     "url": "https://www.universe.com/events/hine-after-hours-tickets-BRZKQ4?ref=ticketmaster",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-15",
+       "localTime": "19:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Dance/Electronic"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://images.universe.com/e006020e-d7d1-46f9-bb2a-3149cccd8888/-/resize/1200x/-/crop/475x475/644,5/-/format/jpeg/-/scale_crop/1024x576/center/-/progressive/yes/-/inline/yes/",
+       "ratio": "16_9",
+       "width": 1024,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "Boisdale, Canary Wharf",
+        "address": {
+         "line1": "Cabot Place"
+        },
+        "city": {
+         "name": "London"
+        },
+        "country": {
+         "countryCode": "GB"
+        },
+        "location": {
+         "latitude": "51.505252",
+         "longitude": "-0.022271"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "id": "17uOv0G6CLN2fz6",
+     "name": "London Eye - Standard Experience",
+     "url": "https://attractions.ticketmaster.co.uk/book/1J5L6-TICKETMASTER/#date=2026-10-16",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-16",
+       "localTime": "10:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Miscellaneous"
+       },
+       "genre": {
+        "name": "Family"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/498/16415e6a-9aff-448e-ad3c-90a10e2e2498_SOURCE",
+       "ratio": "16_9",
+       "width": 2426,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "The London Eye",
+        "address": {
+         "line1": "Lambeth"
+        },
+        "city": {
+         "name": "London"
+        },
+        "country": {
+         "countryCode": "GB"
+        },
+        "location": {
+         "latitude": "51.500992",
+         "longitude": "-0.11735"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "id": "17uOv0G6GEqbQKw",
+     "name": "Madame Tussauds London - Standard Entry",
+     "url": "https://attractions.ticketmaster.co.uk/book/1J3Z8-TICKETMASTER/#date=2026-10-16",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-16",
+       "localTime": "10:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Miscellaneous"
+       },
+       "genre": {
+        "name": "Family"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/5e1/6e7fda03-a9d8-4eb7-a553-24ebcdd465e1_1211781_TABLET_LANDSCAPE_LARGE_16_9.jpg",
+       "ratio": "16_9",
+       "width": 2048,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "Madame Tussauds London",
+        "address": {
+         "line1": "Marylebone Road"
+        },
+        "city": {
+         "name": "London"
+        },
+        "country": {
+         "countryCode": "GB"
+        },
+        "location": {
+         "latitude": "51.52248",
+         "longitude": "-0.15526"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ },
+ "prague": {
+  "query": {
+   "lat": 50.0875,
+   "lon": 14.4213,
+   "radiusKm": 40,
+   "from": "2026-10-16",
+   "to": "2026-10-25"
+  },
+  "_embedded": {
+   "events": [
+    {
+     "id": "Z698xZu0Z16vk9xkFf",
+     "name": "SPINESHANK, HED PE, MÜ",
+     "url": "https://www.ticketmaster.cz/event/spineshank-hed-pe-mu-vstupenky/1197886214",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-17",
+       "localTime": "18:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "offsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Rock"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/894/ebc1f8b6-0ba7-4197-bfed-8033449c1894_SOURCE",
+       "ratio": "16_9",
+       "width": 2561,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "Cross Club",
+        "address": {
+         "line1": "Plynární 1096"
+        },
+        "city": {
+         "name": "Praha 7"
+        },
+        "country": {
+         "countryCode": "CZ"
+        },
+        "location": {
+         "latitude": "50.10819",
+         "longitude": "14.44326"
+        }
+       }
+      ]
+     },
+     "info": "Uplatňuje se transakční poplatek ve výši 30 Kč. Kybernetická"
+    },
+    {
+     "id": "Z698xZu0Z1ku7afFw",
+     "name": "ČESKÝ MEJDAN S IMPULSEM 2026",
+     "url": "https://www.ticketmaster.cz/event/cesky-mejdan-s-impulsem-2026-vstupenky/344254232",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-17",
+       "localTime": "18:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Rock"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/36e/818322a3-9e3b-4417-85a9-e32cda6d636e_SOURCE",
+       "ratio": "16_9",
+       "width": 2426,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "O2 Arena",
+        "address": {
+         "line1": "Českomoravská 2345/17a"
+        },
+        "city": {
+         "name": "Praha 9"
+        },
+        "country": {
+         "countryCode": "CZ"
+        },
+        "location": {
+         "latitude": "50.10479",
+         "longitude": "14.49377"
+        }
+       }
+      ]
+     },
+     "info": "VIEW FROM YOUR SEAT The tenth edition of the unique concert "
+    },
+    {
+     "id": "Z698xZu0Z1kOM3pA6",
+     "name": "MISTHYRMING, OWLS WOODS GRAVES, PROFANATION, GORRCH",
+     "url": "https://www.ticketmaster.cz/event/misthyrming-owls-woods-graves-profanation-gorrch-vstupenky/837496147",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-17",
+       "localTime": "18:30:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "offsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Rock"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/a9d/80959f9d-dbed-40c3-802f-4e0dcbccfa9d_TABLET_LANDSCAPE_LARGE_16_9.jpg",
+       "ratio": "16_9",
+       "width": 2048,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "BLACK PES",
+        "address": {
+         "line1": "Staroklánovická 204"
+        },
+        "city": {
+         "name": "Praha 21"
+        },
+        "country": {
+         "countryCode": "CZ"
+        },
+        "location": {
+         "latitude": "50.08703",
+         "longitude": "14.66466"
+        }
+       }
+      ]
+     },
+     "info": "Uplatňuje se transakční poplatek ve výši 30 Kč. Islandská bl"
+    },
+    {
+     "id": "Z698xZu0Z16v0tvs_w",
+     "name": "Jan Bendig | Fast Track",
+     "url": "https://www.ticketmaster.cz/event/jan-bendig-%7C-fast-track-vstupenky/1929071672",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-17",
+       "localTime": "20:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "cancelled"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Rock"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/a41/5ae42dd1-a51d-4ba2-9283-f261fe6dea41_TABLET_LANDSCAPE_LARGE_16_9.jpg",
+       "ratio": "16_9",
+       "width": 2048,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "O2 universum",
+        "address": {
+         "line1": "Českomoravská 2345/17"
+        },
+        "city": {
+         "name": "Praha 9"
+        },
+        "country": {
+         "countryCode": "CZ"
+        },
+        "location": {
+         "latitude": "50.10341",
+         "longitude": "14.49352"
+        }
+       }
+      ]
+     },
+     "info": "FastTrack O2 universum -- Priority Entry to the Event Don't "
+    },
+    {
+     "id": "Z698xZu0Z1kG_PF08",
+     "name": "Jan Bendig",
+     "url": "https://www.ticketmaster.cz/event/jan-bendig-vstupenky/319948910",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-17",
+       "localTime": "20:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "cancelled"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Rock"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/ce0/c88a1a22-9796-4022-9cd6-16e18c62dce0_SOURCE",
+       "ratio": "16_9",
+       "width": 2426,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "O2 universum",
+        "address": {
+         "line1": "Českomoravská 2345/17"
+        },
+        "city": {
+         "name": "Praha 9"
+        },
+        "country": {
+         "countryCode": "CZ"
+        },
+        "location": {
+         "latitude": "50.10341",
+         "longitude": "14.49352"
+        }
+       }
+      ]
+     },
+     "info": "EVENT IS CANCELLED The JAN BENDIG event, which was schedule"
+    },
+    {
+     "id": "Z698xZu0Z1ko-o07P",
+     "name": "HC Sparta Praha x HC Oceláři Třinec",
+     "url": "https://www.ticketmaster.cz/event/hc-sparta-praha-x-hc-ocelari-trinec-vstupenky/461464125",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-18",
+       "localTime": "16:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Sports"
+       },
+       "genre": {
+        "name": "Hockey"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/989/09abe062-5c95-4a46-874f-858cc739a989_SOURCE",
+       "ratio": "16_9",
+       "width": 2426,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "O2 Arena",
+        "address": {
+         "line1": "Českomoravská 2345/17a"
+        },
+        "city": {
+         "name": "Praha 9"
+        },
+        "country": {
+         "countryCode": "CZ"
+        },
+        "location": {
+         "latitude": "50.10479",
+         "longitude": "14.49377"
+        }
+       }
+      ]
+     },
+     "info": "A handling fee of 15 CZK applies. Accessible Tickets are on "
+    }
+   ]
+  }
+ },
+ "telaviv": {
+  "query": {
+   "lat": 32.0853,
+   "lon": 34.7818,
+   "radiusKm": 100,
+   "from": "2026-10-16",
+   "to": "2026-11-15"
+  },
+  "page": {
+   "totalElements": 3
+  },
+  "_embedded": {
+   "events": [
+    {
+     "id": "Z8HyzZmzMZ9Qq2kvve",
+     "name": "HaChaverim shel Natasha",
+     "url": "https://www.ticketmaster.co.il/event/MPSE5/ALL/en",
+     "dates": {
+      "start": {
+       "localDate": "2026-10-31",
+       "localTime": "22:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Alternative"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/c/797/5e693c26-2881-4776-8f0c-3aa94bfa3797_106511_RETINA_PORTRAIT_16_9.jpg",
+       "ratio": "16_9",
+       "fallback": true
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "Kav Rakia - Park Ariel Sharon",
+        "address": {
+         "line1": "Kav Rakia - Event Hall, Park Ariel Sharon - Mountain Area"
+        },
+        "city": {
+         "name": "Tel Aviv - Jaffa"
+        },
+        "country": {
+         "countryCode": "IL"
+        },
+        "location": {
+         "latitude": "32.034138",
+         "longitude": "34.815617"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "id": "Z5HyzZmzMZ999a6Vv",
+     "name": "Boy George",
+     "url": "https://wait.ticketmaster.co.il/view?c=ticketmasterme&e=ilbg2026",
+     "dates": {
+      "start": {
+       "localDate": "2026-11-04",
+       "localTime": "22:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Rock"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/a/041/10d360d2-e5f7-4817-b469-80d4e091e041_786581_TABLET_LANDSCAPE_3_2.jpg",
+       "ratio": "3_2",
+       "width": 1024,
+       "fallback": false
+      },
+      {
+       "url": "https://s1.ticketm.net/dam/a/041/10d360d2-e5f7-4817-b469-80d4e091e041_SOURCE",
+       "ratio": "16_9",
+       "width": 2426,
+       "fallback": false
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "Menora Mivtachim Arena",
+        "city": {
+         "name": "Tel Aviv - Jaffa"
+        },
+        "country": {
+         "countryCode": "IL"
+        },
+        "location": {
+         "latitude": "32.061455",
+         "longitude": "34.791993"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "id": "Z5HyzZmzMZ999aFdt",
+     "name": "Lior Narkis",
+     "url": "https://www.ticketmaster.co.il/event/MMM33/ALL/en",
+     "dates": {
+      "start": {
+       "localDate": "2026-11-05",
+       "localTime": "22:00:00",
+       "dateTBD": false
+      },
+      "status": {
+       "code": "onsale"
+      }
+     },
+     "classifications": [
+      {
+       "segment": {
+        "name": "Music"
+       },
+       "genre": {
+        "name": "Alternative"
+       },
+       "family": false
+      }
+     ],
+     "images": [
+      {
+       "url": "https://s1.ticketm.net/dam/c/797/5e693c26-2881-4776-8f0c-3aa94bfa3797_106511_RETINA_PORTRAIT_16_9.jpg",
+       "ratio": "16_9",
+       "fallback": true
+      }
+     ],
+     "_embedded": {
+      "venues": [
+       {
+        "name": "Menora Mivtachim Arena",
+        "city": {
+         "name": "Tel Aviv - Jaffa"
+        },
+        "country": {
+         "countryCode": "IL"
+        },
+        "location": {
+         "latitude": "32.061455",
+         "longitude": "34.791993"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

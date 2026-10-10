@@ -1,0 +1,142 @@
+rules_version = '2';
+
+// Firefly security rules. Anything not matched below is denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && request.auth.token.admin == true; }
+    function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+    function myFriends() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.friends;
+    }
+
+    // Same rules as validateEvent() in the app: physical, sourced, real photos with sources.
+    function validEvent(e) {
+      return e.name is string && e.name.size() > 0
+        && e.link is string && e.link.matches('https?://.+[.].+')
+        && e.venue is string && e.venue.size() > 0
+        && e.address is string && e.address.size() > 0
+        && e.location.locLat is number && e.location.locLon is number
+        && !(e.location.locLat == 0 && e.location.locLon == 0)
+        && e.photo_urls is list && e.photo_urls.size() > 0
+        && e.photoSources is list && e.photoSources.size() == e.photo_urls.size()
+        && e.types is list && e.types.size() > 0
+        && e.startDate is string && e.endDate is string && e.endDate >= e.startDate
+        && !e.name.lower().matches('.*(online|virtual|livestream|webinar).*')
+        && !e.venue.lower().matches('.*(online|virtual|livestream|webinar).*');
+    }
+
+    // ---- Public catalogue data ----
+    match /camps/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /events/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin() && validEvent(request.resource.data);
+      allow delete: if isAdmin();
+    }
+    match /savedEvents/{id} { allow read: if true; allow write: if false; }   // written by functions
+    match /fallback/{id} { allow read: if true; allow write: if false; }      // weekly 150-event snapshot
+    match /hiddenPhotos/{id} { allow read: if true; allow write: if isAdmin(); }
+
+    // ---- Server only ----
+    match /cache/{id} { allow read, write: if false; }
+    match /photoReports/{id} { allow read: if isAdmin(); allow write: if false; }
+    match /campPageStatus/{id} { allow read: if isAdmin(); allow write: if false; }
+
+    // ---- Users ----
+    match /usernames/{name} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isMe(uid) && request.resource.data.uid == uid
+        && request.resource.data.friends.size() == 0
+        && !('isAdmin' in request.resource.data);
+      // Friends and identity fields are only changed by Cloud Functions.
+      allow update: if isMe(uid)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'userName', 'friends', 'isAdmin', 'createdAt']);
+
+      match /notifications/{nid} {
+        allow read: if isMe(uid);
+        allow update: if isMe(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create, delete: if false;
+      }
+    }
+    match /friendRequests/{id} {
+      allow read: if signedIn() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow write: if false;
+    }
+
+    // ---- Person-to-person chat: only between friends, only the two members can read ----
+    match /chats/{chatId} {
+      function otherOf(members) { return members[0] == request.auth.uid ? members[1] : members[0]; }
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn()
+        && request.resource.data.members.size() == 2
+        && request.auth.uid in request.resource.data.members
+        && chatId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
+        && otherOf(request.resource.data.members) in myFriends();
+      allow update: if signedIn() && request.auth.uid in resource.data.members
+        && request.resource.data.members == resource.data.members;
+
+      match /messages/{mid} {
+        function members() { return get(/databases/$(database)/documents/chats/$(chatId)).data.members; }
+        allow read: if signedIn() && request.auth.uid in members();
+        allow create: if signedIn() && request.auth.uid in members()
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000;
+        allow update, delete: if false;
+      }
+    }
+
+    // ---- Trips: shared by everyone listed in `people` ----
+    match /trips/{tripId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.people;
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid
+        && request.auth.uid in request.resource.data.people;
+      // Adding people goes through the addTripPeople function (it checks friendship).
+      allow update: if signedIn() && request.auth.uid in resource.data.people
+        && request.resource.data.people == resource.data.people
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ---- Accessibility confirmations from organisations (server and admins only) ----
+    match /accessibility/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // ---- Camp health forms: only the parent who booked, and admins ----
+    match /healthForms/{id} {
+      allow read: if (signedIn() && resource.data.uid == request.auth.uid) || isAdmin();
+      allow create, update: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.bookingId == id
+        && get(/databases/$(database)/documents/campBookings/$(id)).data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ---- Payment process ids and tokens (server only) ----
+    match /payments/{id} {
+      allow read, write: if false;
+    }
+
+    // ---- Camp registrations ----
+    match /campBookings/{id} {
+      allow read: if (signedIn() && resource.data.uid == request.auth.uid) || isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.id == id
+        && request.resource.data.termsAccepted == true
+        && request.resource.data.paymentMethod in ['paypal', 'bank', 'card']
+        && request.resource.data.status in ['pending_payment', 'bank_transfer_requested'];
+      allow update, delete: if false; // payment status only changes server-side
+    }
+  }
+}

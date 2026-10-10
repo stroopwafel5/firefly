@@ -1,0 +1,17 @@
+node_modules/
+functions/node_modules/
+functions/lib/
+.expo/
+dist/
+web-build/
+android/
+ios/
+*.keystore
+*.jks
+.env
+functions/.env.local
+functions/.secret.local
+service-account*.json
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
