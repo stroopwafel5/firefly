@@ -22,7 +22,7 @@ import type { RootParams } from '../../navigation/types';
 import { addDays } from '../../planner/generator';
 import { haversineKm } from '../../planner/geo';
 import { api } from '../../services/api';
-import { EventSearchResult, filterEvents, offlineEvents, searchEvents, syncFallbackSnapshot, weeklyPicks } from '../../services/eventService';
+import { EventSearchResult, filterEvents, offlineEvents, rememberEvent, searchEvents, syncFallbackSnapshot, weeklyPicks } from '../../services/eventService';
 import { currentLocation } from '../../services/location';
 import { config } from '../../config';
 import { colors, font, radius, space } from '../../theme';
@@ -326,20 +326,26 @@ export function EventCard({ event: e }: { event: Event }) {
   const going = lists.has('bookedEvents', e.id);
   const el = e.toElement();
 
+  /**
+   * "I'm going": marked at once on the phone (kept there until the server has it, like a heart),
+   * the event kept on the phone for the profile, and the server told in the background (it keeps a
+   * copy of the event and tells friends).
+   */
   const toggleGoing = async () => {
-    if (!lists.signedIn) {
-      await lists.toggle('bookedEvents', e.id); // shows the sign-in prompt
-      return;
+    const on = await lists.toggle('bookedEvents', e.id); // asks to sign in when needed
+    if (on == null) return;
+    if (on) {
+      void rememberEvent(e.toJSON());
+      toast(t('weekend.goingSaved'));
     }
-    try {
-      await api.setGoing({ eventId: e.id, going: !going, event: e.toJSON() });
-    } catch {
-      toast(t('common.error'));
-    }
+    api.setGoing({ eventId: e.id, going: on, event: e.toJSON() }).catch(() => undefined);
   };
   const toggleFav = async () => {
     const on = await lists.toggle('favouriteEvents', e.id);
-    if (on && e.origin !== 'curated') api.saveEvent({ event: e.toJSON() }).catch(() => undefined);
+    if (on) {
+      void rememberEvent(e.toJSON());
+      if (e.origin !== 'curated') api.saveEvent({ event: e.toJSON() }).catch(() => undefined);
+    }
   };
 
   const C = colors.weekend;

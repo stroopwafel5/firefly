@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AreaStore, NearbyQuery, RELICENSE_AFTER_MS, TerraTransport, allowlistAppend, locationsById, nearbyPlaces } from '../src/terraFlow';
+import { MemoryLimiterStore, SharedLimiter, TERRA_SEARCH, isSearchPath, reserveSlot } from '../src/terraLimiter';
 import { TerraLocation, toAttraction } from '../src/tripadvisorMap';
 
 /**
@@ -24,6 +25,8 @@ class FakeTerra implements TerraTransport {
   locationEndpointsForbidden = false;
   allowlistForbidden = false;
   multiGetAsArray = false;
+  /** Answer 429 to the calls this returns true for (the search bucket being exhausted). */
+  refuse: (path: string) => boolean = () => false;
   constructor(public places: Array<TerraLocation & { _cat: Cat }>) {}
 
   private problem(status: number, detail: string) {
@@ -33,6 +36,7 @@ class FakeTerra implements TerraTransport {
 
   async get<T>(path: string, p: Record<string, unknown>): Promise<{ status: number; body: T | null }> {
     this.calls.push(path);
+    if (this.refuse(path)) return this.problem(429, 'Too Many Requests');
     if (p.version !== undefined && String(p.version) !== '1') return this.problem(400, 'bad version');
     const size = Number(p.size ?? 20);
     const page = Number(p.page ?? 1);
@@ -140,7 +144,12 @@ test('Terra flow: asking for more places later licenses more; a month later the 
   terra.allowlist = new Set([...terra.allowlist].slice(0, 5));
   const short = await nearbyPlaces(terra, store, q(10), t0 + 1000);
   assert.ok(!terra.calls.includes('POST /allowlist'), 'licensed recently: not re-licensed');
-  assert.equal(short.items.length, 4); // 5 still licensed, one of them closed
+  // 5 still licensed (one of them closed) → 4 full places, topped up to 10 with the catalog's
+  // lighter data rather than coming back short for a month.
+  assert.equal(short.items.length, 10);
+  assert.equal(short.items.filter((n) => n.photo).length, 4, 'the licensed ones (with photos) first');
+  assert.ok(short.items.slice(0, 4).every((n) => n.photo));
+  assert.equal(short.fallback, 'catalog');
   terra.calls = [];
   await nearbyPlaces(terra, store, q(30), t0 + 2000);
   assert.ok(terra.calls.includes('POST /allowlist'), 'more wanted than licensed before → license more');
@@ -207,4 +216,81 @@ test('Terra flow: allowlist calls are de-duplicated and never billed; failures s
   assert.equal(terra.billed, 0);
   terra.allowlistForbidden = true;
   await assert.rejects(allowlistAppend(terra, [3]), /allowlist HTTP 403/);
+});
+
+test('Terra flow: a refused search (429) stops at once; a refused catalog never marks the area as licensed', async () => {
+  const terra = new FakeTerra(city());
+  const store = new MemoryStore();
+  terra.refuse = (path) => path === '/locations/nearby';
+  const r = await nearbyPlaces(terra, store, q(20));
+  assert.equal(r.busy, true);
+  assert.deepEqual(terra.calls, ['/locations/nearby'], 'no more searches spent while refused');
+
+  terra.calls = [];
+  terra.refuse = (path) => path === '/catalog/locations/nearby';
+  const r2 = await nearbyPlaces(terra, store, q(20));
+  assert.equal(r2.busy, true);
+  assert.equal(store.m.size, 0, 'not remembered as licensed (this is what kept areas empty for 30 days)');
+  assert.ok(!terra.calls.includes('POST /allowlist'));
+
+  terra.calls = [];
+  terra.refuse = () => false;
+  const r3 = await nearbyPlaces(terra, store, q(20));
+  assert.ok(terra.calls.includes('POST /allowlist'), 'licensed as soon as the catalog answers');
+  assert.equal(r3.items.length, 19);
+});
+
+test('Terra flow: an area remembered with no places, or whose places vanished from the allowlist, is licensed again', async () => {
+  const terra = new FakeTerra(city());
+  const store = new MemoryStore();
+  const t0 = Date.UTC(2026, 9, 10);
+  store.m.set('ATTRACTION_50.09_14.42', { ids: [], want: 30, at: t0 }); // left by the old bug
+  const r = await nearbyPlaces(terra, store, q(20), t0 + 1000);
+  assert.ok(terra.calls.includes('POST /allowlist'));
+  assert.equal(r.items.length, 19);
+  terra.allowlist.clear(); // e.g. overwritten from the dashboard
+  terra.calls = [];
+  const r2 = await nearbyPlaces(terra, store, q(20), t0 + 2000);
+  assert.ok(terra.calls.includes('POST /allowlist'), 'none found although licensed: license again');
+  assert.equal(r2.items.length, 19);
+});
+
+test('Terra search limit: one a second for the whole account, a burst of 4 after a quiet spell', async () => {
+  assert.ok(isSearchPath('/locations/nearby') && isSearchPath('/catalog/locations/nearby') && isSearchPath('/locations/search') && isSearchPath('/catalog/locations/search'));
+  assert.ok(!isSearchPath('/locations') && !isSearchPath('/locations/123/photos') && !isSearchPath('/allowlist'));
+  // Pure schedule: 4 at once, then one every 1.1 s.
+  let tat = 0;
+  const at: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    const r = reserveSlot(tat, 10_000, TERRA_SEARCH)!;
+    at.push(r.at - 10_000);
+    tat = r.tat;
+  }
+  assert.deepEqual(at, [0, 0, 0, 0, 1100, 2200, 3300]);
+  assert.equal(reserveSlot(10_000 + 40_000, 10_000, TERRA_SEARCH), null, 'too long a queue: answer busy instead of waiting');
+
+  // Three servers (attractions, restaurants, hotels) sharing one schedule never exceed it.
+  let clock = 0;
+  const sent: number[] = [];
+  const shared = new MemoryLimiterStore();
+  const servers = [0, 1, 2].map(() => new SharedLimiter(shared, TERRA_SEARCH, () => clock, async (ms) => void (clock += ms)));
+  for (let i = 0; i < 12; i++) {
+    assert.ok(await servers[i % 3].take());
+    sent.push(clock);
+  }
+  for (let i = 4; i < sent.length; i++) {
+    const inLastSecond = sent.filter((x) => x > sent[i] - 1000 && x <= sent[i]).length;
+    assert.ok(inLastSecond <= 4, `at most the burst in any second (${inLastSecond} at ${sent[i]} ms)`);
+  }
+  assert.ok(sent[11] >= 7 * 1100, 'after the burst, one every 1.1 s');
+
+  // A 429 holds every server back.
+  const before = clock;
+  await servers[0].pause(5000);
+  assert.ok(await servers[1].take());
+  assert.ok(clock - before >= 5000, 'the next search waits out the pause');
+
+  // Firestore unreachable: each server keeps its own schedule instead of failing.
+  const broken = new SharedLimiter({ update: async () => Promise.reject(new Error('offline')) }, TERRA_SEARCH, () => clock, async (ms) => void (clock += ms));
+  assert.equal(await broken.take(), true);
 });

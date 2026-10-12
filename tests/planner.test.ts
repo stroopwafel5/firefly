@@ -161,7 +161,7 @@ test('scheduleDay: a long visit over lunchtime includes lunch on site; the trace
     dayEnd: H(18),
     base: place('base', 0, 0),
     candidates: [
-      { ...place('themepark', 0.01, 0), kind: 'attraction', duration: 240, score: 200, weeklyHours: allWeek(H(10), H(18)) },
+      { ...place('themepark', 0.01, 0), kind: 'attraction', duration: 240, score: 200, weeklyHours: allWeek(H(10), H(18)), foodOnSite: true },
       { ...place('shut', 0.002, 0), kind: 'attraction', duration: 60, score: 50, weeklyHours: [[], [], [], [], [], [], []] },
     ],
     fixed: [],
@@ -175,6 +175,35 @@ test('scheduleDay: a long visit over lunchtime includes lunch on site; the trace
   const pick = trace.find((t) => t.kind === 'pick');
   assert.ok(pick && pick.kind === 'pick' && pick.mealOnSite === 'lunch');
   assert.ok(pick && pick.kind === 'pick' && pick.others.some((o) => o.id === 'shut' && o.skip === 'closedToday'));
+});
+
+test('scheduleDay: a long museum visit without food there never "includes lunch": lunch is a restaurant', () => {
+  const res = scheduleDay({
+    date: SAT,
+    dayStart: H(10),
+    dayEnd: H(18),
+    base: place('base', 0, 0),
+    candidates: [{ ...place('museum', 0.01, 0), kind: 'attraction', duration: 240, score: 200, weeklyHours: allWeek(H(10), H(18)) }],
+    fixed: [],
+    restaurants: [place('r1', 0.001, 0)],
+    travel: new TravelTable(MODE_CAR),
+  });
+  const museum = res.slots.find((s) => s.refId === 'museum');
+  assert.ok(!museum?.meal, 'no meal at the museum');
+  assert.ok(res.slots.some((s) => s.kind === 'restaurant' && s.meal === 'lunch'), 'lunch at a restaurant');
+  if (museum) {
+    const lunch = res.slots.find((s) => s.kind === 'restaurant' && s.meal === 'lunch')!;
+    assert.ok(museum.end <= lunch.start || museum.start >= lunch.end, 'the visit is before or after lunch');
+  }
+});
+
+test('hasFoodOnSite: theme parks, zoos and a museum with a café; not a plain museum', async () => {
+  const { hasFoodOnSite } = await import('../src/planner/classify');
+  const a = (kind: string, name: string, description = '') => ({ kind, name, description, category: '' }) as never;
+  assert.ok(hasFoodOnSite(a('themepark', 'Phantasialand')));
+  assert.ok(hasFoodOnSite(a('zoo', 'Zoo Berlin')));
+  assert.ok(hasFoodOnSite(a('museum', 'Deutsches Museum', 'The museum has a restaurant and a café on the ground floor.')));
+  assert.ok(!hasFoodOnSite(a('museum', 'Pergamonmuseum', 'One of the museums on Museum Island in Berlin.')));
 });
 
 /* ---------------- drag & drop ---------------- */
@@ -367,12 +396,26 @@ test('generateTrip: unknown city and bad dates are reported clearly', async () =
 
 test('eventTiming: short shows are fixed, long opening windows are drop-in', () => {
   const mk = (s?: string, e?: string) =>
-    ({ startTime: s, endTime: e } as unknown as Event);
+    ({ name: '', venue: '', description: '', startTime: s, endTime: e } as unknown as Event);
   assert.deepEqual(eventTiming(mk('19:00', '21:00'), H(8), H(22)), { fixed: { start: H(19), end: H(21) } });
   const w = eventTiming(mk('19:00', '23:59'), H(8), H(22));
   assert.ok('window' in w && w.duration === 120);
   const all = eventTiming(mk(), H(8), H(22));
   assert.ok('window' in all && all.window.start === H(8));
+});
+
+test('eventTiming: a theme park or film park day ticket is a long visit in opening hours, with lunch there', () => {
+  const ev = (name: string, venue = '', s?: string, e?: string) => ({ name, venue, description: '', startTime: s, endTime: e }) as unknown as Event;
+  const film = eventTiming(ev('Filmpark Babelsberg - Tagesticket', 'Filmpark Babelsberg'), H(8), H(20));
+  assert.ok('window' in film && film.duration >= 240 && film.window.start >= H(10) && film.foodOnSite, JSON.stringify(film));
+  const zoo = eventTiming(ev('Zoo Berlin – Eintritt', 'Zoologischer Garten'), H(8), H(20));
+  assert.ok('window' in zoo && zoo.duration === 180 && zoo.foodOnSite);
+  const hours = eventTiming(ev('Europa-Park', '', '09:00', '18:00'), H(8), H(20));
+  assert.ok('window' in hours && hours.duration === 300, 'its opening hours are a window, not a 9-hour show');
+  const opens = eventTiming(ev('Movie Park Germany day ticket', '', '10:00'), H(8), H(20));
+  assert.ok('window' in opens && opens.window.start === H(10) && opens.duration === 300);
+  const concert = eventTiming(ev('Rammstein', 'Olympiastadion', '20:00'), H(8), H(23));
+  assert.deepEqual(concert, { fixed: { start: H(20), end: H(22) } }, 'a concert is still a show');
 });
 
 test('generateTrip: a long stay in one city asks for more places and fills every day', async () => {
@@ -547,7 +590,7 @@ test('generateTrip: Prague → Athens in 10 days goes city by city, ≤ 4 days e
   // Attractions are visited best first, and nothing repeats.
   const all = trip.itinerary.flatMap((d) => d.attractions.map((a) => a.id));
   assert.equal(new Set(all).size, all.length);
-  assert.ok(trip.itinerary.every((d) => d.attractions.length > 0), 'every day has attractions');
+  assert.ok(trip.itinerary.every((d) => d.attractions.length > 0), `every day has attractions: ${trip.itinerary.map((d) => `${d.anchorName}:${d.attractions.length}`).join(' ')}`);
   assert.ok(trip.itinerary[0].attractions.some((a) => a.popularity === 9.4), 'the 9.4 place on day 1');
 });
 

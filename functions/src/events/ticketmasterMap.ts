@@ -17,18 +17,19 @@ import { EUR_PER, EventJSON, EventType, SearchArgs, inferTypes } from './types';
 
 export const TM_BASE = 'https://app.ticketmaster.com/discovery/v2/events.json';
 
-export function ticketmasterUrl(a: SearchArgs, key: string, size = 100): string {
+export function ticketmasterUrl(a: SearchArgs, key: string, size = 100, o: { maxRadiusKm?: number; page?: number; sort?: string } = {}): string {
   const p = new URLSearchParams({
     apikey: key,
     latlong: `${a.lat},${a.lon}`,
-    radius: String(Math.min(Math.round(a.radiusKm), 150)),
+    radius: String(Math.min(Math.round(a.radiusKm), o.maxRadiusKm ?? 150)),
     unit: 'km',
     startDateTime: `${a.from}T00:00:00Z`,
     endDateTime: `${a.to}T23:59:59Z`,
     size: String(size),
-    sort: 'date,asc',
+    sort: o.sort ?? 'date,asc',
     locale: '*',
   });
+  if (o.page) p.set('page', String(o.page));
   if (a.query) p.set('keyword', a.query);
   return `${TM_BASE}?${p}`;
 }
@@ -86,7 +87,7 @@ export function tmTypes(e: TmEvent): EventType[] {
 
 export interface TmResponse {
   _embedded?: { events?: TmEvent[] };
-  page?: { totalElements?: number };
+  page?: { totalElements?: number; totalPages?: number };
   fault?: { faultstring?: string };
 }
 

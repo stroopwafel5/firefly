@@ -41,7 +41,7 @@ function createAuth(): Auth {
 
 export const auth: Auth = createAuth();
 // Long polling is more reliable than WebChannel streaming on Android networks.
-export const db: Firestore = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+export const db: Firestore = initializeFirestore(app, { experimentalAutoDetectLongPolling: true, ignoreUndefinedProperties: true });
 export const functions: Functions = getFunctions(app, config.functionsRegion);
 export const storage: FirebaseStorage = getStorage(app);
 

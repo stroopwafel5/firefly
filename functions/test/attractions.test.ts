@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { natureClassGroups, cacheDocs, buildEuropeCache, COUNTRIES, SavedSearch, SearchStore, firestoreSearchStore, plannedSearches } from '../src/attractions/build';
 import { EUROPE_CITIES } from '../src/attractions/europeCities';
 import { KIND_TYPES, NOT_A_SIGHT, WIKIDATA_CLASSES, kindFromText } from '../src/attractions/kinds';
-import { AttractionOut, isLandmark, mergeAttractions, nameSimilarity, selectForCache, taPopularity } from '../src/attractions/merge';
+import { AttractionOut, CACHE_TARGET, isLandmark, mergeAttractions, nameSimilarity, selectForCache, taPopularity } from '../src/attractions/merge';
 import { osmRestaurants, restaurantsQuery } from '../src/attractions/osm';
 import {
   aroundQuery,
@@ -145,7 +145,8 @@ test('merge: the same place from both sources becomes one, with the best of each
   assert.ok(nameSimilarity('Prague Castle', 'Pražský hrad (Prague Castle)') >= 0.5);
 });
 
-test('backup list: 5,000 places, spread out, at least a quarter nature', () => {
+test('backup list: 10,000 places by default; spread out, at least a quarter nature', () => {
+  assert.equal(CACHE_TARGET, 10_000);
   const places: WdPlace[] = [];
   // 400 famous city sights all in one spot, 300 nature sites spread around.
   for (let i = 0; i < 400; i++) places.push({ qid: `Q${i}`, name: `City ${i}`, description: '', lat: 41.89, lon: 12.49, sitelinks: 200 - i / 4, kind: 'church' });
@@ -185,7 +186,13 @@ test('backup list build: every city and the nature of every country are asked, n
     { target: 100, cities: EUROPE_CITIES.slice(0, 30) },
   );
   assert.equal(asked.filter((q) => q.includes('wikibase:around')).length, 30, 'one map search per city');
-  assert.equal(asked.filter((q) => q.includes('wdt:P17 wd:')).length, COUNTRIES.length * 2, 'two nature searches per country');
+  assert.equal(asked.filter((q) => q.includes('wdt:P17 wd:')).length, COUNTRIES.length * 3, 'two nature searches and one heritage search per country');
+  const prague = asked.find((q) => q.includes('Point(14.42100 50.08800)'))!;
+  assert.match(prague, /LIMIT 150\n/, 'a big city like Prague: its 150 best-known places');
+  assert.match(prague, /radius "8"/);
+  const heritage = asked.find((q) => q.includes('wdt:P17 wd:Q213') && q.includes('wd:Q23413'))!;
+  assert.ok(heritage, 'castles of the Czech Republic (Karlštejn, Český Krumlov…) are asked country-wide');
+  assert.match(heritage, /FILTER\(\?sitelinks >= 12\)/);
   assert.equal(places.length, 100);
   const first = places.find((p) => p.qid === 'Q1')!;
   assert.equal(first.names?.he, 'מקום');

@@ -101,10 +101,24 @@ test('round trip: the next city is close enough to get home in time', () => {
   assert.ok(haversineKm(PRAGUE, next.location) <= 450 && haversineKm(PRAGUE, next.location) >= 60, next.name);
 });
 
-test('never planned: bike rentals, bars, spas; food places only when Food was chosen', () => {
-  assert.equal(plannable(att('bike', 9, 0, { kind: 'rental' }), []), false);
+test('sights by what the traveller chose: no rentals or spas; shops and night clubs only when chosen; meals never; cafés and sweets only with Food', () => {
+  assert.equal(plannable(att('bike', 9, 0, { kind: 'rental' }), ['Extreme Sport']), false);
+  assert.equal(plannable(att('spa', 9, 0, { kind: 'spa' }), ['Food']), false);
   assert.equal(plannable(att('bar', 9, 0, { kind: 'nightlife' }), ['Food']), false);
-  assert.equal(plannable(att('cafe', 9, 0, { kind: 'food' }), []), false);
-  assert.equal(plannable(att('cafe', 9, 0, { kind: 'food' }), ['Food']), true);
+  assert.equal(plannable(att('club', 9, 0, { kind: 'nightlife' }), ['Night Clubs']), true);
+  assert.equal(plannable(att('mall', 9, 0, { kind: 'shopping' }), []), false);
+  assert.equal(plannable(att('mall', 9, 0, { kind: 'shopping' }), ['Shopping']), true);
+  // Meals: never sights, Food or not.
+  assert.equal(plannable(att('De Branderie', 9, 0, { description: 'De Branderie is an atmospheric and cozy lunchroom in the middle of Enschede.' }), ['Food']), false);
+  assert.equal(plannable(att('Frank & Charlie', 9, 0, { description: 'A bustling spot for breakfast, lunch and everything in between. We serve locally roasted specialty coffee.' }), ['Food']), false);
+  assert.equal(plannable(att('Ristorante Da Mario', 9, 0, { kind: 'food' }), ['Food']), false);
+  // Coffee and sweets: only with Food.
+  assert.equal(plannable(att('Meisje Koffiegeschenk', 9, 0), []), false);
+  assert.equal(plannable(att('Meisje Koffiegeschenk', 9, 0), ['Food']), true);
+  assert.equal(plannable(att('Gelateria La Romana', 9, 0, { kind: 'food' }), ['Food']), true);
+  // Food you go to see, and other sights.
+  assert.equal(plannable(att('Golan Heights Winery', 9, 0, { kind: 'food' }), []), true);
+  assert.equal(plannable(att('Markthal', 9, 0, { kind: 'food', category: 'Farmers Markets' }), []), true);
+  assert.equal(plannable(att('Euromast', 9, 0, { kind: 'tower', description: 'Euromast is an observation tower in Rotterdam, with a restaurant at 96 m.' }), []), true);
   assert.equal(plannable(att('castle', 9, 0, { kind: 'castle' }), []), true);
 });

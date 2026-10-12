@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Firefly Events Upload</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rubik:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --night: #1B1B3A; --glow: #FFC93C; --glowSoft: #FFF6DB;
+    --ink: #26263A; --muted: #4E4A86;
+    --accent: #6A1B9A; --accentDeep: #4A126C; --page: #F4E8FA; --surface: #FBF4FE; --field: #F7ECFC; --line: #E2CDEF;
+    --ok: #1B5E20; --okSoft: #E3F1E4; --held: #B45309; --heldSoft: #FFF1E2; --bad: #C62828; --badSoft: #FDE8E8;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 16px/1.5 Inter, Rubik, system-ui, sans-serif; }
+  [dir="rtl"], .he { font-family: Rubik, Inter, system-ui, sans-serif; }
+  header { background: var(--night); color: #FFF6DB; padding: 18px 16px; }
+  header .in { max-width: 920px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 14px 4px rgba(255, 201, 60, .55); flex: none; }
+  header h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: .1px; }
+  header .who { margin-inline-start: auto; font-size: 14px; color: #E9D7F7; }
+  main { max-width: 920px; margin: 0 auto; padding: 20px 16px 64px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 18px; }
+  .card h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; color: var(--accentDeep); display: flex; align-items: center; gap: 10px; }
+  .step { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #FBF4FE; font-size: 14px; display: inline-grid; place-items: center; flex: none; }
+  .hint { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  label { display: block; font-size: 14px; font-weight: 500; color: var(--muted); margin: 12px 0 6px; }
+  input[type=password], input[type=text], input[type=date], textarea {
+    width: 100%; font: inherit; color: var(--ink); background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; padding: 11px 13px; outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { min-height: 150px; resize: vertical; font-size: 14px; line-height: 1.45; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .row > * { flex: 1 1 220px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 999px; padding: 11px 20px; cursor: pointer; background: var(--accent); color: #FBF4FE; }
+  button.ghost { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
+  button.small { padding: 6px 14px; font-size: 14px; }
+  button.danger { background: transparent; color: var(--bad); border: 1.5px solid var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+  .drop { border: 2px dashed var(--line); border-radius: 14px; padding: 18px; text-align: center; color: var(--muted); background: var(--field); cursor: pointer; }
+  .drop.over { border-color: var(--accent); color: var(--accent); }
+  .drop b { color: var(--accent); }
+  .msg { margin-top: 12px; padding: 10px 14px; border-radius: 12px; font-size: 14px; }
+  .msg.bad { background: var(--badSoft); color: var(--bad); }
+  .msg.ok { background: var(--okSoft); color: var(--ok); }
+  .msg.info { background: var(--glowSoft); color: #7A4D00; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--accent); font-weight: 500; font-size: 14px; }
+  pre { background: var(--field); border-radius: 12px; padding: 12px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; }
+  .list { display: grid; gap: 10px; margin-top: 14px; }
+  .item { display: grid; grid-template-columns: 76px 1fr; gap: 14px; background: #FDF9FF; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .item.nophoto { grid-template-columns: 1fr; }
+  .thumb { width: 76px; height: 76px; border-radius: 12px; object-fit: cover; background: var(--field); }
+  .t { font-weight: 600; }
+  .sub { font-size: 14px; color: var(--muted); }
+  .names { font-size: 14px; margin-top: 4px; display: grid; gap: 2px; }
+  .names span { display: block; }
+  .chip { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 10px; margin-inline-end: 6px; }
+  .chip.published { background: var(--okSoft); color: var(--ok); }
+  .chip.held { background: var(--heldSoft); color: var(--held); }
+  .chip.failed { background: var(--badSoft); color: var(--bad); }
+  .chip.day { background: var(--glowSoft); color: #7A4D00; }
+  .notes { font-size: 13px; margin: 6px 0 0; padding-inline-start: 18px; }
+  .notes.reasons { color: var(--held); }
+  .notes.warn { color: var(--muted); }
+  a { color: var(--accent); word-break: break-all; }
+  a.sub { display: block; width: fit-content; }
+  .bar { height: 10px; border-radius: 999px; background: var(--field); overflow: hidden; margin-top: 10px; }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #C77DFF); transition: width .4s; }
+  .hidden { display: none !important; }
+  .count { font-size: 14px; color: var(--muted); }
+  @media (max-width: 520px) { .item { grid-template-columns: 60px 1fr; } .thumb { width: 60px; height: 60px; } .card { padding: 16px; } }
+</style>
+</head>
+<body>
+<header><div class="in"><span class="dot"></span><h1>Firefly · Weekend events upload</h1><span class="who" id="who"></span></div></header>
+<main>
+
+  <section class="card" id="signin">
+    <h2><span class="step">1</span>Passcode</h2>
+    <p class="hint">Enter the admins' passcode.</p>
+    <div class="row">
+      <div><input type="password" id="passcode" autocomplete="current-password" placeholder="Passcode"></div>
+      <div style="flex:0 0 auto"><button id="checkBtn">Sign in</button></div>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="remember"> Remember on this device</label>
+    <div id="signinMsg"></div>
+  </section>
+
+  <section class="card hidden" id="listCard">
+    <h2><span class="step">2</span>The list</h2>
+    <p class="hint">A .txt file in the usual format: day headings, then each event's title with its link on the next line. Lines under a link are notes for the reader, e.g. the place and time for an Instagram post.</p>
+    <div class="row">
+      <div><label for="weekStart">Weekend starting (Thursday)</label><input type="date" id="weekStart"></div>
+    </div>
+    <label>File</label>
+    <div class="drop" id="drop"><b>Choose a .txt file</b> or drop it here<input type="file" id="file" accept=".txt,text/plain" class="hidden"></div>
+    <label for="text">…or paste the list</label>
+    <textarea id="text" spellcheck="false" placeholder="Четверг&#10;**&#10;Балет Щелкунчик в Нетании&#10;https://…"></textarea>
+    <details><summary>Example of the format</summary>
+<pre>Софаш
+
+Четверг
+**
+Балет Щелкунчик в Нетании
+https://ru.kupatbravo.co.il/announce/86367
+
+Пятница
+**
+Большой пикник для веганов
+https://www.instagram.com/p/…
+Sacher Park, Jerusalem, 11:00        ← optional note for links that can't be read
+
+Суббота
+**
+…</pre>
+      Day headings can be in Russian, Hebrew or English, with or without a date ("Четверг 15.10"). The same link under several days becomes one event on all of them.
+    </details>
+    <div class="actions"><button id="previewBtn">Read the list</button><span class="count" id="previewCount"></span></div>
+    <div id="listMsg"></div>
+    <div class="list" id="preview"></div>
+    <div class="actions hidden" id="startRow"><button id="startBtn">Add these events</button><span class="count">Each page is read and translated to English, Hebrew and Russian — about 15–30 seconds per event.</span></div>
+  </section>
+
+  <section class="card hidden" id="jobCard">
+    <h2><span class="step">3</span>Adding the events</h2>
+    <p class="hint" id="jobHint">Reading each page… You can keep this page open or come back later — the work goes on without it.</p>
+    <div class="bar"><div id="barFill"></div></div>
+    <div class="count" id="jobCount" style="margin-top:6px"></div>
+    <div id="jobMsg"></div>
+    <div class="list" id="results"></div>
+  </section>
+
+  <section class="card hidden" id="liveCard">
+    <h2><span class="step">4</span>Uploaded events in the app</h2>
+    <p class="hint">Upcoming events from uploads. Removing one takes it out of the app at once.</p>
+    <div class="actions" style="margin-top:0"><button class="ghost small" id="refreshBtn">Refresh</button><span class="count" id="liveCount"></span></div>
+    <div class="list" id="live"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const API = '/api/events-upload';
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+  };
+  let passcode = '';
+  let pollTimer = null;
+
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const msg = (box, kind, text) => { const b = $(box); b.innerHTML = ''; if (text) b.appendChild(el('div', `msg ${kind}`, text)); };
+  const fmtDay = (d) => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); } catch { return d; } };
+  const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+
+  async function call(action, extra = {}) {
+    const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, passcode, ...extra }) });
+    let j = {};
+    try { j = await res.json(); } catch {}
+    if (!res.ok) throw Object.assign(new Error(j.error || `Server error ${res.status}`), { status: res.status, data: j });
+    return j;
+  }
+
+  // The coming weekend's Thursday (this week's from Thursday to Saturday).
+  function defaultThursday() {
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    const dow = d.getDay();
+    const back = dow === 4 ? 0 : dow === 5 ? 1 : dow === 6 ? 2 : -((4 - dow + 7) % 7);
+    d.setDate(d.getDate() - back);
+    return d.toISOString().slice(0, 10);
+  }
+  $('weekStart').value = defaultThursday();
+
+  async function signIn(silent) {
+    passcode = $('passcode').value.trim();
+    if (!passcode) return;
+    $('checkBtn').disabled = true;
+    try {
+      const r = await call('check');
+      $('who').textContent = `Signed in as ${r.admin}`;
+      store.set('fireflyUploadPass', $('remember').checked ? passcode : null);
+      $('signin').classList.add('hidden');
+      ['listCard', 'liveCard'].forEach((id) => $(id).classList.remove('hidden'));
+      loadLive();
+      const job = store.get('fireflyUploadJob');
+      if (job) watch(job);
+    } catch (e) {
+      if (!silent) msg('signinMsg', 'bad', e.message);
+      passcode = '';
+    } finally { $('checkBtn').disabled = false; }
+  }
+  $('checkBtn').onclick = () => signIn(false);
+  $('passcode').onkeydown = (e) => { if (e.key === 'Enter') signIn(false); };
+  const saved = store.get('fireflyUploadPass');
+  if (saved) { $('passcode').value = saved; $('remember').checked = true; signIn(true); }
+
+  // File: pick or drop.
+  const drop = $('drop');
+  drop.onclick = () => $('file').click();
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); };
+  $('file').onchange = (e) => { if (e.target.files[0]) readFile(e.target.files[0]); };
+  function readFile(f) {
+    const r = new FileReader();
+    r.onload = () => { $('text').value = String(r.result || ''); drop.innerHTML = ''; drop.appendChild(el('b', '', f.name)); drop.appendChild(document.createTextNode(' — loaded. Choose another file to replace it.')); drop.appendChild($('file')); preview(); };
+    r.readAsText(f, 'utf-8');
+  }
+
+  async function preview() {
+    const text = $('text').value;
+    $('preview').innerHTML = ''; $('startRow').classList.add('hidden'); $('previewCount').textContent = ''; msg('listMsg');
+    if (!text.trim()) return msg('listMsg', 'bad', 'Choose a file or paste the list first.');
+    $('previewBtn').disabled = true;
+    try {
+      const { parsed } = await call('preview', { text, weekStart: $('weekStart').value });
+      $('previewCount').textContent = `${parsed.items.length} events found` + (parsed.headings.length ? ` · days: ${parsed.headings.map((h) => `${h.text} = ${fmtDay(h.date)}`).join(', ')}` : '');
+      for (const it of parsed.items) {
+        const row = el('div', 'item nophoto');
+        const body = el('div');
+        const top = el('div');
+        (it.days.length ? it.days : ['?']).forEach((d) => top.appendChild(el('span', 'chip day', d === '?' ? 'no day' : fmtDay(d))));
+        const t = el('span', 't', it.title || '(no title)'); t.dir = 'auto'; top.appendChild(t);
+        body.appendChild(top);
+        if (it.url) { const a = el('a', '', host(it.url)); a.href = it.url; a.target = '_blank'; a.rel = 'noopener'; const s = el('div', 'sub'); s.appendChild(a); body.appendChild(s); }
+        else body.appendChild(el('div', 'sub', '⚠ no link — this one will be held back'));
+        if (it.notes) { const n = el('div', 'sub', `Notes: ${it.notes}`); n.dir = 'auto'; body.appendChild(n); }
+        row.appendChild(body);
+        $('preview').appendChild(row);
+      }
+      if (parsed.ignored.length) $('preview').appendChild(el('div', 'sub', `Not used: ${parsed.ignored.join(' · ')}`));
+      $('startRow').classList.remove('hidden');
+      $('startBtn').textContent = `Add these ${parsed.items.length} events`;
+    } catch (e) {
+      msg('listMsg', 'bad', e.message);
+    } finally { $('previewBtn').disabled = false; }
+  }
+  $('previewBtn').onclick = preview;
+  $('weekStart').onchange = () => { if ($('text').value.trim()) preview(); };
+
+  $('startBtn').onclick = async () => {
+    $('startBtn').disabled = true;
+    try {
+      const r = await call('start', { text: $('text').value, weekStart: $('weekStart').value });
+      store.set('fireflyUploadJob', r.jobId);
+      watch(r.jobId);
+      $('jobCard').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+      msg('listMsg', 'bad', e.message);
+    } finally { $('startBtn').disabled = false; }
+  };
+
+  function resultRow(r) {
+    const row = el('div', r.photo ? 'item' : 'item nophoto');
+    if (r.photo) { const img = el('img', 'thumb'); img.src = r.photo; img.alt = ''; img.loading = 'lazy'; img.onerror = () => img.remove(); row.appendChild(img); }
+    const body = el('div');
+    const top = el('div');
+    const label = { published: 'In the app', held: 'Held back', failed: 'Failed' }[r.status] || r.status;
+    top.appendChild(el('span', `chip ${r.status}`, label));
+    const t = el('span', 't', (r.name && r.name.en) || r.title); t.dir = 'auto'; top.appendChild(t);
+    body.appendChild(top);
+    const when = [r.startDate && fmtDay(r.startDate) + (r.endDate && r.endDate !== r.startDate ? ` – ${fmtDay(r.endDate)}` : ''), r.startTime, r.venue].filter(Boolean).join(' · ');
+    if (when) body.appendChild(el('div', 'sub', when));
+    if (r.name) {
+      const names = el('div', 'names');
+      const he = el('span', 'he', r.name.he); he.dir = 'rtl'; names.appendChild(he);
+      names.appendChild(el('span', '', r.name.ru));
+      body.appendChild(names);
+    }
+    if (r.url) { const a = el('a', 'sub', host(r.url)); a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; body.appendChild(a); }
+    const list = (items, cls) => { if (!items || !items.length) return; const ul = el('ul', `notes ${cls}`); items.forEach((x) => ul.appendChild(el('li', '', x))); body.appendChild(ul); };
+    list(r.reasons, 'reasons');
+    list(r.warnings, 'warn');
+    if (r.status === 'published' && r.eventId) {
+      const b = el('button', 'danger small', 'Remove from the app'); b.style.marginTop = '8px';
+      b.onclick = () => remove(r.eventId, b);
+      body.appendChild(b);
+    }
+    row.appendChild(body);
+    return row;
+  }
+
+  function watch(jobId) {
+    clearTimeout(pollTimer);
+    $('jobCard').classList.remove('hidden');
+    msg('jobMsg');
+    const tick = async () => {
+      try {
+        const j = await call('status', { jobId });
+        const done = j.done || 0;
+        $('barFill').style.width = `${j.total ? Math.round((done / j.total) * 100) : 0}%`;
+        const res = Object.values(j.results || {}).sort((a, b) => a.index - b.index);
+        const c = { published: 0, held: 0, failed: 0 };
+        res.forEach((r) => c[r.status] = (c[r.status] || 0) + 1);
+        $('jobCount').textContent = `${done} of ${j.total} read · ${c.published} in the app · ${c.held} held back · ${c.failed} failed`;
+        $('results').innerHTML = '';
+        res.forEach((r) => $('results').appendChild(resultRow(r)));
+        if (j.status === 'done') {
+          $('jobHint').textContent = 'Done. Held-back events need a fix in the list (see the notes); upload it again and only those change — nothing is added twice.';
+          if (j.error) msg('jobMsg', 'bad', j.error);
+          else msg('jobMsg', 'ok', `${c.published} events are in the app now.`);
+          store.set('fireflyUploadJob', null);
+          loadLive();
+          return;
+        }
+        $('jobHint').textContent = j.status === 'queued' ? 'Starting…' : 'Reading each page… You can keep this page open or come back later — the work goes on without it.';
+      } catch (e) {
+        if (e.status === 404) { store.set('fireflyUploadJob', null); $('jobCard').classList.add('hidden'); return; }
+        msg('jobMsg', 'info', `${e.message} — trying again…`);
+      }
+      pollTimer = setTimeout(tick, 3000);
+    };
+    tick();
+  }
+
+  async function remove(id, btn) {
+    if (!confirm('Remove this event from the app?')) return;
+    btn.disabled = true;
+    try { await call('remove', { id }); btn.replaceWith(el('span', 'chip failed', 'Removed')); loadLive(); }
+    catch (e) { alert(e.message); btn.disabled = false; }
+  }
+
+  async function loadLive() {
+    try {
+      const { events } = await call('list');
+      $('live').innerHTML = '';
+      $('liveCount').textContent = `${events.length} upcoming`;
+      for (const e of events) {
+        const row = resultRow({ status: 'published', eventId: e.id, name: e.name && e.name.he ? e.name : null, title: (e.name && e.name.en) || '', startDate: e.startDate, endDate: e.endDate, startTime: e.startTime, venue: e.venue, url: e.link, photo: e.photo, reasons: [], warnings: e.uploadedBy ? [`Uploaded by ${e.uploadedBy}`] : [] });
+        row.querySelector('.chip').remove();
+        $('live').appendChild(row);
+      }
+    } catch (e) { $('liveCount').textContent = e.message; }
+  }
+  $('refreshBtn').onclick = loadLive;
+})();
+</script>
+</body>
+</html>

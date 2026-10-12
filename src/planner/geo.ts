@@ -81,6 +81,14 @@ export function pointAlong(path: Location[], fraction: number): Location {
   return path[path.length - 1];
 }
 
+/** The point `km` away from `a` in the direction `bearingDeg` (0 = north, 90 = east). */
+export function offsetKm(a: Location, km: number, bearingDeg: number): Location {
+  const b = (bearingDeg * Math.PI) / 180;
+  const dLat = (km * Math.cos(b)) / 111.32;
+  const dLon = (km * Math.sin(b)) / (111.32 * Math.max(0.05, Math.cos((a.locLat * Math.PI) / 180)));
+  return new Location(Math.max(-89.9, Math.min(89.9, a.locLat + dLat)), ((a.locLon + dLon + 540) % 360) - 180);
+}
+
 export function interpolate(a: Location, b: Location, f: number): Location {
   return new Location(a.locLat + (b.locLat - a.locLat) * f, a.locLon + (b.locLon - a.locLon) * f);
 }

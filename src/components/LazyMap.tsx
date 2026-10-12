@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import type { Ref } from 'react';
 import MapView, { Marker, PROVIDER_GOOGLE, Polyline, Region } from 'react-native-maps';
@@ -95,6 +95,27 @@ export const LazyMap = React.memo(function LazyMap({
     };
   }, []);
 
+  // The map itself, also handed to the screen's own ref.
+  const inner = useRef<MapView | null>(null);
+  const setRef = useCallback(
+    (m: MapView | null) => {
+      inner.current = m;
+      if (typeof mapRef === 'function') mapRef(m);
+      else if (mapRef && typeof mapRef === 'object') (mapRef as { current: MapView | null }).current = m;
+    },
+    [mapRef],
+  );
+  // Show the asked-for place once the map is ready, and again whenever it changes (another day of
+  // the trip): a map otherwise stays where it first opened, which on some phones is not
+  // `initialRegion` at all.
+  const regionKey = initialRegion
+    ? [initialRegion.latitude, initialRegion.longitude, initialRegion.latitudeDelta, initialRegion.longitudeDelta].map((v) => v.toFixed(4)).join(',')
+    : '';
+  useEffect(() => {
+    if (ready && initialRegion) inner.current?.animateToRegion(initialRegion, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, regionKey]);
+
   const okPins = useMemo(() => pins.filter((p) => validLatLon(p.lat, p.lon)).slice(0, 200), [pins]);
   const okLine = useMemo(() => (line ?? []).filter((p) => validLatLon(p.lat, p.lon)).map((p) => ({ latitude: p.lat, longitude: p.lon })), [line]);
   const region = initialRegion ?? regionAround([...okPins, ...(line ?? [])]);
@@ -115,7 +136,7 @@ export const LazyMap = React.memo(function LazyMap({
       ) : (
         <MapBoundary fallback={box(t('weekend.mapUnavailable'), false)}>
           <MapView
-            ref={mapRef}
+            ref={setRef}
             provider={PROVIDER_GOOGLE}
             style={StyleSheet.absoluteFill}
             initialRegion={region}

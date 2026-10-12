@@ -195,12 +195,13 @@ export interface PhotoCredit {
 }
 
 /** Visit length by kind (minutes). */
-const VISIT: Partial<Record<Kind, number>> = {
+export const VISIT: Partial<Record<Kind, number>> = {
   nationalpark: 240, reserve: 150, themepark: 240, zoo: 180, aquarium: 120, museum: 120, gallery: 100,
   castle: 120, palace: 120, fortress: 90, ruins: 90, cave: 90, canyon: 150, waterfall: 75, lake: 90,
   beach: 120, park: 75, garden: 75, oldtown: 90, church: 40, monastery: 60, synagogue: 40, mosque: 40,
   bridge: 30, square: 30, tower: 45, monument: 30, viewpoint: 30, theatre: 60, market: 60,
 };
+export const visitMinutesFor = (kind: Kind | undefined): number => (kind && VISIT[kind]) || 60;
 
 /** A Wikidata place as Firefly's attraction JSON (same shape as Tripadvisor's). */
 export function wdToAttraction(p: WdPlace, lang: Lang, credit?: PhotoCredit) {

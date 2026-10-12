@@ -1,5 +1,5 @@
 /**
- * Builds Firefly's backup list of ~5,000 European attractions from Wikidata (free, no key,
+ * Builds Firefly's backup list of ~10,000 European attractions from Wikidata (free, no key,
  * public domain) and saves it to Firestore (attractionCache/*) and to
  * functions/data/attractions-europe.json, so you can open and check it.
  *
@@ -16,6 +16,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { initAdmin } from './adminInit';
 import { buildEuropeCache, cacheDocs, firestoreSearchStore } from '../functions/src/attractions/build';
 import { USER_AGENT, WDQS_URL, type CommonsInfo, type SparqlJson } from '../functions/src/attractions/wikidata';
+import { toRow } from '../src/planner/backupAttractions';
 
 async function sparql(query: string): Promise<SparqlJson> {
   const res = await fetch(WDQS_URL, {
@@ -53,13 +54,16 @@ async function main() {
   const dir = join(process.cwd(), 'functions', 'data');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'attractions-europe.json'), JSON.stringify(r.places, null, 1));
+  // The app's own copy (compact): trips have sights even when the server can't be reached.
+  // Bundled into the app the next time it is built.
+  writeFileSync(join(process.cwd(), 'src', 'data', 'attractions-europe.json'), JSON.stringify(r.places.map(toRow)));
   const batch = db.batch();
   for (const d of cacheDocs(r.places, Date.now(), { missing: r.missing, oldestSearchAt: r.oldestAt })) {
     batch.set(db.collection('attractionCache').doc(d.id), d.data);
   }
   await batch.commit();
   const byKind = r.places.reduce<Record<string, number>>((m, p) => ((m[p.kind] = (m[p.kind] ?? 0) + 1), m), {});
-  console.log(`\nSaved ${r.places.length} attractions (Firestore attractionCache + functions/data/attractions-europe.json).`);
+  console.log(`\nSaved ${r.places.length} attractions (Firestore attractionCache, functions/data/ and the app's src/data/attractions-europe.json).`);
   console.log('By kind:', byKind);
   if (r.missing) {
     console.log(`\n${r.missing} of ${r.total} searches got no answer this time. The list is saved and works; run the command again later to fill those in (only they are redone).`);

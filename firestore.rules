@@ -39,6 +39,7 @@ service cloud.firestore {
     }
     match /savedEvents/{id} { allow read: if true; allow write: if false; }   // written by functions
     match /fallback/{id} { allow read: if true; allow write: if false; }      // weekly 150-event snapshot
+    match /attractionCache/{id} { allow read: if true; allow write: if false; } // backup attraction list (public Wikidata data)
     match /hiddenPhotos/{id} { allow read: if true; allow write: if isAdmin(); }
 
     // ---- Server only ----

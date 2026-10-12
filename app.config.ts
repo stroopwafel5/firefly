@@ -9,8 +9,13 @@ import { withGradleProperties } from 'expo/config-plugins';
 const GRADLE_JVM_ARGS = '-Xmx4096m -XX:MaxMetaspaceSize=1024m';
 function withGradleMemory(cfg: ExpoConfig): ExpoConfig {
   return withGradleProperties(cfg, (c: any) => {
-    c.modResults = c.modResults.filter((p: any) => !(p.type === 'property' && p.key === 'org.gradle.jvmargs'));
-    c.modResults.push({ type: 'property', key: 'org.gradle.jvmargs', value: GRADLE_JVM_ARGS });
+    const set = (key: string, value: string) => {
+      c.modResults = c.modResults.filter((p: any) => !(p.type === 'property' && p.key === key));
+      c.modResults.push({ type: 'property', key, value });
+    };
+    set('org.gradle.jvmargs', GRADLE_JVM_ARGS);
+    // Room on the phone for the 10,000-place attraction list (AsyncStorage's default is 6 MB).
+    set('AsyncStorage_db_size_in_MB', '40');
     return c;
   });
 }

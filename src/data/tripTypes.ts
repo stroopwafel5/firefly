@@ -15,6 +15,10 @@ export const TYPE_PHOTO_ARTICLES: Record<EventType, string[]> = {
   Tour: ['Charles Bridge', 'Old Town Square', 'Royal Mile'],
   Family: ['Tivoli Gardens', 'Efteling', 'Europa-Park'],
   'Kid Friendly': ['Playground', 'Prague Zoo', 'Legoland Billund Resort'],
+  Shopping: ['Galleria Vittorio Emanuele II', 'Grand Bazaar, Istanbul', 'Harrods'],
+  Beaches: ['Navagio', 'Whitehaven Beach', 'Praia da Marinha'],
+  'Extreme Sport': ['Paragliding', 'Bungee jumping', 'Whitewater rafting'],
+  'Night Clubs': ['Nightclub', 'Ministry of Sound', 'Berghain'],
 };
 
 /** Icon (MaterialCommunityIcons) per type, shown while the photo loads or offline. */
@@ -27,6 +31,10 @@ export const TYPE_ICONS: Record<EventType, string> = {
   Food: 'silverware-fork-knife',
   Tour: 'walk',
   'Kid Friendly': 'teddy-bear',
+  Shopping: 'shopping',
+  Beaches: 'beach',
+  'Extreme Sport': 'parachute',
+  'Night Clubs': 'glass-cocktail',
 };
 
 /**
@@ -42,4 +50,8 @@ export const TA_KEYWORDS: Record<EventType, RegExp> = {
   Tour: /tour|walking|sightseeing|landmark|point of interest|bridge|square|neighbo|observation|viewpoint/i,
   Family: /zoo|aquarium|amusement|theme park|water park|playground|game|family|science|interactive/i,
   'Kid Friendly': /zoo|aquarium|amusement|theme park|water park|playground|children|kids|science|interactive|farm/i,
+  Shopping: /shopping|\bshops?\b|mall|market|boutique|outlet|bazaar|souvenir|department store|flea/i,
+  Beaches: /beach|\bbay\b|coast|seaside|shore|lagoon/i,
+  'Extreme Sport': /zip ?-?line|bungee|sky ?div|paraglid|parasail|rafting|canyoning|\batv\b|quad|off-?road|4x4|jeep|climb|via ferrata|surf|kite|wakeboard|scuba|diving|kart|paintball|rope park|adventure|ski\b|snowboard|sandboard|jet ?ski|adrenaline|extreme/i,
+  'Night Clubs': /night ?club|nightlife|\bclubs?\b|disco|dance club|\bbars?\b|lounge|cocktail/i,
 };

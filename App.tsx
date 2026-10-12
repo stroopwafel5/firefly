@@ -44,8 +44,14 @@ export default function App() {
     Rubik_700Bold,
     Rubik_800ExtraBold,
   });
+  // Never wait more than a few seconds for the fonts: after that the phone's own font is used.
+  const [fontWait, setFontWait] = React.useState(true);
+  React.useEffect(() => {
+    const t = setTimeout(() => setFontWait(false), 5000);
+    return () => clearTimeout(t);
+  }, []);
   setFontsReady(fontsLoaded && !fontError);
-  if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: colors.night }} />;
+  if (!fontsLoaded && !fontError && fontWait) return <View style={{ flex: 1, backgroundColor: colors.night }} />;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

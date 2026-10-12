@@ -12,8 +12,12 @@ import type { TKey } from '../../i18n';
 import { DayPlan, MODE_CAR, ScheduledItem, Trip, VERIFIABLE_NEEDS, attractionEmoji, pacingFor, popularityOf } from '../../models';
 import type { RootScreen } from '../../navigation/types';
 import { moveToDay, reorder, removeItem } from '../../planner/dayEdit';
+import { skippedDestinations } from '../../planner/generator';
 import { describeHours } from '../../planner/time';
+import { AreaWarning, parseAreaNote } from '../../planner/safety';
 import { saveTrip, updateTrip } from '../../services/tripService';
+import { rememberPlace } from '../../services/placeStore';
+import { errorCode } from '../../services/userService';
 import { isSaved, loadTrip, markSaved, putTrip } from '../../services/tripStore';
 import { SectionBackdrop } from '../../components/DuskScene';
 import { TintProvider, tintFor } from '../../components/Tint';
@@ -85,8 +89,8 @@ export function TripPlanScreen({ route, navigation }: RootScreen<'TripPlan'>) {
       markSaved(String(trip.id));
       setSaved(true);
       toast(t('plan.saved'));
-    } catch {
-      toast(t('common.error'));
+    } catch (e) {
+      toast(`${t('common.error')} (${errorCode(e)})`);
     }
   };
 
@@ -142,12 +146,27 @@ export function TripPlanScreen({ route, navigation }: RootScreen<'TripPlan'>) {
         }}
         ListHeaderComponent={
           <View style={{ marginBottom: space.md }}>
-            {trip.notes.includes('tripadvisorBusy') ? (
+            {trip.notes.includes('noAttractions') ? (
+              <Row style={[styles.note, { borderColor: colors.danger }]}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.danger} />
+                <Text style={[font.small, { flex: 1, color: colors.danger }]}>{t('plan.note.noAttractions')}</Text>
+              </Row>
+            ) : trip.notes.includes('tripadvisorBusy') ? (
               <Row style={[styles.note, { borderColor: colors.attraction }]}>
                 <MaterialCommunityIcons name="information-outline" size={20} color={colors.attraction} />
                 <Text style={[font.small, { flex: 1, color: colors.attraction }]}>{t('plan.note.tripadvisorBusy')}</Text>
               </Row>
             ) : null}
+            {skippedDestinations(trip.notes).length ? (
+              <Row style={[styles.note, { borderColor: colors.danger }]}>
+                <MaterialCommunityIcons name="map-marker-alert-outline" size={20} color={colors.danger} />
+                <Text style={[font.small, { flex: 1, color: colors.danger }]}>
+                  {t('plan.destSkipped', { names: skippedDestinations(trip.notes).join(', ') })}
+                </Text>
+              </Row>
+            ) : null}
+            <AreaWarnings notes={trip.notes} />
+            <SourcesLine notes={trip.notes} />
             <RouteCard trip={trip} dayIndex={dayIndex} onPickDay={setDayIndex} />
             <Text style={[styles.dayTitle, { color: kidsMode ? colors.kids : colors.attraction }]}>{t('plan.dayTitle', { n: dayIndex + 1, place: day.anchorName })}</Text>
             <Text style={[font.body, { color: kidsMode ? colors.kids : colors.attraction, marginBottom: space.sm }]}>
@@ -341,10 +360,12 @@ function SlotView({
             <Text style={[font.small, { color: colors.attraction, fontWeight: '600' }]}>{time}</Text>
             <Text style={[font.h3, { color: colors.attraction }]}>{a.name}</Text>
             <Text style={[font.small, { color: colors.attraction }]}>
-              {a.rating ? `${t('plan.tripadvisorRating', { rating: a.rating })} · ` : ''}
+              {a.rating ? `${t((a.ratingSource ?? a.provider) === 'google' ? 'plan.googleRating' : 'plan.tripadvisorRating', { rating: a.rating })} · ` : ''}
               {t('plan.popularity', { score: popularityOf(a).toFixed(1) })}
             </Text>
-            <Text style={font.small}>{hours ? t('plan.hours', { hours }) : t('plan.hoursUnknown')}</Text>
+            <Text style={font.small}>
+              {hours ? `${t('plan.hours', { hours })}${a.hoursSource ? ` · ${t(`plan.hoursChecked.${a.hoursSource}` as TKey)}` : ''}` : t('plan.hoursUnknown')}
+            </Text>
             {slot.meal ? (
               <Row>
                 <MaterialCommunityIcons name="silverware-fork-knife" size={14} color={colors.restaurant} />
@@ -386,7 +407,7 @@ function SlotView({
 
         <Row wrap style={{ marginTop: space.sm }}>
           <Button small color={accent} icon="information-outline" label={t('plan.details')} onPress={() => onDetails(a.id)} />
-          <IconButton icon={fav ? 'heart' : 'heart-outline'} color={accent} label={t('common.favourite')} onPress={() => lists.toggle('favouriteAttraction', a.id)} />
+          <IconButton icon={fav ? 'heart' : 'heart-outline'} color={accent} label={t('common.favourite')} onPress={async () => (await lists.toggle('favouriteAttraction', a.id)) && rememberPlace(a)} />
           <IconButton icon="calendar-arrow-right" color={accent} label={t('plan.moveToDay')} onPress={onMove} />
           <IconButton icon="delete-outline" color={colors.danger} label={t('plan.remove')} onPress={onRemove} />
         </Row>
@@ -461,4 +482,51 @@ function HeaderChip({ label, sub, selected, onPress, ink }: { label: string; sub
       {sub ? <Text style={{ color: selected ? ink : 'rgba(255,255,255,0.92)', fontSize: 12, fontWeight: '500' }}>{sub}</Text> : null}
     </PressableScale>
   );
+}
+
+/**
+ * "Before you go": places on this trip that need a word of warning (Palestinian Authority towns,
+ * Ukraine, Crimea…), each with the days and places it concerns.
+ */
+function AreaWarnings({ notes }: { notes: string[] }) {
+  const { t } = useI18n();
+  const warnings = notes.map(parseAreaNote).filter((w): w is AreaWarning => !!w);
+  if (!warnings.length) return null;
+  return (
+    <View style={[styles.note, { borderColor: colors.danger, backgroundColor: tintFor(colors.danger).field }]} accessibilityRole="alert">
+      <Row>
+        <MaterialCommunityIcons name="alert-outline" size={20} color={colors.danger} />
+        <Text style={[font.h3, { flex: 1, color: colors.danger }]}>{t('plan.area.title')}</Text>
+      </Row>
+      {warnings.map((w) => (
+        <View key={`${w.id}:${w.country ?? ''}`} style={{ marginTop: space.sm }}>
+          <Text style={[font.small, { fontWeight: '700', color: colors.danger }]}>{t('plan.area.where', { days: w.days.join(', '), places: w.places.join(', ') })}</Text>
+          <Text style={[font.small, { color: colors.text }]}>{t(`plan.area.${w.id}` as TKey)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** "Sights from: Tripadvisor 12 · Wikipedia (Wikidata) 40 · …" — where this plan's places came from. */
+function SourcesLine({ notes }: { notes: string[] }) {
+  const { t } = useI18n();
+  const raw = notes.find((n) => n.startsWith('sources:'));
+  if (!raw) return null;
+  let c: Record<string, number | number[]> = {};
+  try {
+    c = JSON.parse(raw.slice('sources:'.length)) as Record<string, number | number[]>;
+  } catch {
+    return null;
+  }
+  const n = (k: string) => (typeof c[k] === 'number' ? (c[k] as number) : 0);
+  const parts: string[] = [];
+  for (const k of ['tripadvisor', 'google', 'wikidata', 'osm', 'backup', 'phone', 'wikipedia'] as const) if (n(k) > 0) parts.push(t(`plan.src.${k}` as TKey, { n: n(k) }));
+  if (n('serverFailed') > 0) parts.push(t('plan.src.serverFailed'));
+  const http = Array.isArray(c.http) ? (c.http as number[]).filter((h) => h >= 400 && h !== 404) : [];
+  if (http.includes(429)) parts.push(t('plan.src.http429'));
+  const other = http.filter((h) => h !== 429);
+  if (other.length) parts.push(t('plan.src.httpOther', { codes: other.join(', ') }));
+  if (!parts.length) return null;
+  return <Text style={[font.small, { marginBottom: space.sm, color: colors.attraction }]}>{t('plan.note.sources', { list: parts.join(' · ') })}</Text>;
 }

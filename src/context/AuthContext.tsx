@@ -4,10 +4,13 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import type { UserDoc } from '../models';
 import { auth, db, serverConfigured } from '../services/firebase';
 import { warmUp } from '../services/api';
+import { ensureProfile, normalizeUser } from '../services/userService';
 
 interface AuthState {
   firebaseUser: FirebaseUser | null;
   profile: UserDoc | null;
+  /** The profile as the server has it (no change of this phone still on its way). */
+  profileConfirmed: boolean;
   ready: boolean;
   isAdmin: boolean;
   /**
@@ -28,6 +31,7 @@ interface AuthState {
 const AuthContext = createContext<AuthState>({
   firebaseUser: null,
   profile: null,
+  profileConfirmed: false,
   ready: false,
   isAdmin: false,
   entered: false,
@@ -38,6 +42,7 @@ const AuthContext = createContext<AuthState>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserDoc | null>(null);
+  const [profileConfirmed, setProfileConfirmed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [ready, setReady] = useState(false);
   const [guest, setGuest] = useState(false);
@@ -49,31 +54,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true); // built-in content only: browsing works, signing in doesn't
       return;
     }
-    return onAuthStateChanged(auth, async (u) => {
+    // Firebase normally answers at once (it reads the saved session from the phone). If it hasn't
+    // after 8 seconds (storage busy, a broken saved session), show the log-in page anyway rather
+    // than a spinner forever; a late answer still signs the user in.
+    const giveUp = setTimeout(() => setReady(true), 8000);
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+        clearTimeout(giveUp);
         setFirebaseUser(u);
+        if (!u) {
+          // Logged out (or never logged in): back to the log-in page.
+          setIsAdmin(false);
+          setProfile(null);
+          if (!holdingRef.current) setGuest(false); // a failed sign-up doesn't end a guest visit
+        }
+        // Open the app now; the admin check below may need the network (an expired session is
+        // refreshed first), and nothing on screen should wait for it.
+        setReady(true);
         if (u) {
           warmUp(); // start the server functions while the user looks around (see api.ts)
           // Admins are marked with a custom claim (scripts/setAdmin.ts).
           const token = await u.getIdTokenResult().catch(() => null);
           // Ignore a late answer for someone who has logged out (or switched account) meanwhile.
           if (auth.currentUser?.uid === u.uid) setIsAdmin(token?.claims?.admin === true);
-        } else {
-          // Logged out (or never logged in): back to the log-in page.
-          setIsAdmin(false);
-          setProfile(null);
-          if (!holdingRef.current) setGuest(false); // a failed sign-up doesn't end a guest visit
         }
-        setReady(true);
       });
+    return () => {
+      clearTimeout(giveUp);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
     if (!firebaseUser || !serverConfigured) return;
-    return onSnapshot(
+    let repair: ReturnType<typeof setTimeout> | undefined;
+    const off = onSnapshot(
       doc(db, 'users', firebaseUser.uid),
-      (snap) => setProfile(snap.exists() ? (snap.data() as UserDoc) : null),
+      (snap) => {
+        // Every list present, even in profiles saved by earlier versions (normalizeUser).
+        setProfile(snap.exists() ? normalizeUser(snap.data() as Partial<UserDoc>, firebaseUser.uid) : null);
+        setProfileConfirmed(!snap.metadata.hasPendingWrites && !snap.metadata.fromCache);
+        clearTimeout(repair);
+        // An account without a profile (made in the console, or a sign-up cut short): make one,
+        // unless a sign-up is saving it right now.
+        if (!snap.exists() && !firebaseUser.isAnonymous) {
+          repair = setTimeout(() => {
+            if (holdingRef.current || auth.currentUser?.uid !== firebaseUser.uid) return;
+            ensureProfile(firebaseUser.uid, firebaseUser.email ?? '', firebaseUser.displayName ?? '', 'en').catch(() => undefined);
+          }, 5000);
+        }
+      },
       () => setProfile(null),
     );
+    return () => {
+      clearTimeout(repair);
+      off();
+    };
   }, [firebaseUser]);
 
   const continueAsGuest = useCallback(() => {
@@ -97,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const entered = guest || (!!firebaseUser && !firebaseUser.isAnonymous && !holding);
 
   return (
-    <AuthContext.Provider value={{ firebaseUser, profile, ready, isAdmin, entered, continueAsGuest, holdWhile }}>
+    <AuthContext.Provider value={{ firebaseUser, profile, profileConfirmed, ready, isAdmin, entered, continueAsGuest, holdWhile }}>
       {children}
     </AuthContext.Provider>
   );

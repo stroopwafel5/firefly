@@ -1,6 +1,17 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { GOOGLE_SERVER_KEY } from './params';
-import { NOMINATIM_UA, NominatimPlace, nominatimReverseUrl, nominatimSearchUrl, parseNominatimReverse, parseNominatimSearch } from './geo/nominatim';
+import {
+  NOMINATIM_UA,
+  NominatimPlace,
+  PlaceSuggestion,
+  mergeSuggestions,
+  nominatimReverseUrl,
+  nominatimSearchUrl,
+  nominatimSuggestUrl,
+  parseNominatimReverse,
+  parseNominatimSearch,
+  parseNominatimSuggestions,
+} from './geo/nominatim';
 import { DAY, Lang, cached, fetchJson, isLang, mapLimit, isWarmup, requireAuth, requireNumber, requireString, secret } from './util';
 
 /**
@@ -75,6 +86,46 @@ export const geocode = onCall({ secrets: [GOOGLE_SERVER_KEY] }, async (req) => {
   const d = (req.data ?? {}) as { query?: string; lang?: string };
   const lang = isLang(d.lang) ? d.lang : 'en';
   return geocodeText(requireString(d.query, 'query', 200), lang, secret(GOOGLE_SERVER_KEY));
+});
+
+/**
+ * Suggestions for the trip form's start / end field — typed in Hebrew, Russian or English, with
+ * the names in the app's language. While typing (`typing: true`) only Google answers (OpenStreetMap's
+ * Nominatim must not be used for search-as-you-type); when the traveller presses search, Nominatim
+ * adds its other candidates (towns and cities first). Cached 30 days per text.
+ */
+export const placeSuggest = onCall({ secrets: [GOOGLE_SERVER_KEY] }, async (req) => {
+  if (isWarmup(req)) return { warm: true };
+  requireAuth(req);
+  const d = (req.data ?? {}) as { query?: string; lang?: string; typing?: boolean };
+  const lang = isLang(d.lang) ? d.lang : 'en';
+  const query = requireString(d.query, 'query', 100).trim();
+  if (query.length < 2) return { items: [] };
+  const key = secret(GOOGLE_SERVER_KEY);
+  const typing = d.typing === true;
+  const { value } = await cached(
+    `suggest:v1:${typing ? 't' : 'f'}:${lang}:${query.toLowerCase()}`,
+    30 * DAY,
+    async () => {
+      const google = async (): Promise<PlaceSuggestion[]> => {
+        if (!key) return [];
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&language=${GOOGLE_LANG[lang]}&key=${key}`;
+        const j = await fetchJson<GeocodeResponse>(url).catch(() => null);
+        return (j?.results ?? []).slice(0, 3).map((r) => {
+          const comp = (type: string) => r.address_components.find((c) => c.types.includes(type));
+          const name = comp('locality')?.long_name ?? comp('administrative_area_level_1')?.long_name ?? r.formatted_address.split(',')[0];
+          const detail = [comp('administrative_area_level_1')?.long_name, comp('country')?.long_name].filter((x) => x && x !== name).join(', ');
+          return { name, detail, lat: r.geometry.location.lat, lon: r.geometry.location.lng, country: comp('country')?.short_name ?? '' };
+        });
+      };
+      const g = await google();
+      if (typing) return mergeSuggestions([g]);
+      const n = await nominatim<Parameters<typeof parseNominatimSuggestions>[0]>(nominatimSuggestUrl(query, lang)).then(parseNominatimSuggestions);
+      return mergeSuggestions([g, n]);
+    },
+    (v) => v.length > 0,
+  );
+  return { items: value };
 });
 
 export const reverseGeocode = onCall({ secrets: [GOOGLE_SERVER_KEY] }, async (req) => {

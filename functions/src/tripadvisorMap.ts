@@ -148,6 +148,46 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${St
 const typicalDay = (w?: Array<Array<{ open: number; close: number }>>) => (w ? w[3].flatMap((i) => [hhmm(i.open), hhmm(i.close)]) : []);
 
 /** Category words used for typing (hierarchy and ids are language-neutral). */
+/**
+ * A hotel, B&B, guest house or rental by Tripadvisor's own categories (Terra sometimes answers
+ * an attraction or restaurant search with "Hotel Wentzl"). False when the answer has no
+ * categories (the catalog's lighter data): the name filters (attractions/kinds.ts) decide then.
+ */
+export function isLodging(l: TerraLocation): boolean {
+  return (l.categories ?? []).some(
+    (c) =>
+      /hotel|accommodation|lodging|vacation rental/i.test(c.top_level_category ?? '') ||
+      /^(hotels?|b\s?&\s?b|bed and breakfast|inns?|guest\s?houses?|hostels?|motels?|vacation rentals?|specialty lodging|apartments?)$/i.test(c.display_name ?? ''),
+  );
+}
+
+/** Tripadvisor files the place only under eating and drinking (no attraction category). */
+export function onlyFood(l: TerraLocation): boolean {
+  const tops = (l.categories ?? []).map((c) => c.top_level_category ?? '').filter(Boolean);
+  return tops.length > 0 && tops.every((t) => /restaurant|eat|drink|food/i.test(t));
+}
+
+/**
+ * Tripadvisor itself calls this a restaurant: its page is a restaurant page ("Restaurant_Review",
+ * not "Attraction_Review" — a "#3 of 250 things to do"), and its categories, when given, are under
+ * eating and drinking with nothing under attractions, tours or hotels.
+ */
+export function isTaRestaurant(l: TerraLocation): boolean {
+  const page = l.urls?.tripadvisor?.main ?? '';
+  if (/Attraction_Review|AttractionProductReview|Hotel_Review|VacationRentalReview/i.test(page)) return false;
+  if (page && !/Restaurant_Review/i.test(page)) return false;
+  const cats = l.categories ?? [];
+  if (!cats.length) return true;
+  const text = (c: (typeof cats)[number]) => `${c.top_level_category ?? ''} ${c.display_name ?? ''} ${c.hierarchy ?? ''}`;
+  if (cats.some((c) => /attraction|things to do|tours?\b|activit|hotel|accommodation|lodging/i.test(text(c)))) return false;
+  return cats.some((c) => /restaurant|eat|drink|food|caf[eé]/i.test(text(c)));
+}
+
+/** Tripadvisor files the place under eating and drinking. */
+export function servesFood(l: TerraLocation): boolean {
+  return (l.categories ?? []).some((c) => /restaurant|eat|drink|food|caf[eé]|bar\b/i.test(`${c.top_level_category ?? ''} ${c.display_name ?? ''}`));
+}
+
 export function categoryText(l: TerraLocation): string {
   return (l.categories ?? [])
     .flatMap((c) => [c.id, c.hierarchy, c.display_name, c.parent_category?.display_name, c.parent_category?.id])
@@ -165,6 +205,10 @@ const TYPE_KEYWORDS: Record<string, RegExp> = {
   Tour: /tour|walking|sightseeing|landmark|point of interest|bridge|square|neighbo|observation|viewpoint/i,
   Family: /zoo|aquarium|amusement|theme park|water park|playground|game|family|science|interactive/i,
   'Kid Friendly': /zoo|aquarium|amusement|theme park|water park|playground|children|kids|science|interactive|farm/i,
+  Shopping: /shopping|\bshops?\b|mall|market|boutique|outlet|bazaar|souvenir|department store|flea/i,
+  Beaches: /beach|\bbay\b|coast|seaside|shore|lagoon/i,
+  'Extreme Sport': /zip ?-?line|bungee|sky ?div|paraglid|parasail|rafting|canyoning|\batv\b|quad|off-?road|4x4|jeep|climb|via ferrata|surf|kite|wakeboard|scuba|diving|kart|paintball|rope park|adventure|ski\b|snowboard|sandboard|jet ?ski|adrenaline|extreme/i,
+  'Night Clubs': /night ?club|nightlife|\bclubs?\b|disco|dance club|\bbars?\b|lounge|cocktail/i,
 };
 
 export function typesFor(text: string): string[] {
@@ -232,6 +276,8 @@ export function toAttraction(l: TerraLocation, photos: TerraPhoto[], lang: Lang 
     location: { locLat: l.coordinates?.latitude ?? 0, locLon: l.coordinates?.longitude ?? 0 },
     openingHours: typicalDay(w),
     weeklyHours: w,
+    /** Where the hours were checked (the merge prefers Google's when it has them). */
+    hoursSource: w ? ('tripadvisor' as const) : undefined,
     rating: r?.rating,
     numReviews: r?.count,
     provider: 'tripadvisor' as const,

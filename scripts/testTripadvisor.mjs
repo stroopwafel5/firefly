@@ -58,7 +58,18 @@ function url(path, params = {}) {
   return `${BASE}${path}?${p}`;
 }
 
+/**
+ * Searches (nearby / search, catalog or not) share one bucket of 1 request per second (burst 5) on
+ * every Terra plan, so this script spaces them 1.1 s apart; otherwise most would be refused (429).
+ */
+let lastSearch = 0;
+const SEARCH = /^\/(catalog\/)?locations\/(search|nearby)$/;
 async function call(name, path, params = {}, { key = KEY, method = 'GET', body } = {}) {
+  if (SEARCH.test(path)) {
+    const wait = lastSearch + 1100 - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastSearch = Date.now();
+  }
   const u = url(path, params);
   const headers = { accept: 'application/json' };
   if (key) headers['X-API-Key'] = key;
@@ -94,7 +105,11 @@ function report(status, test, detail, lines = []) {
   for (const l of lines) console.log(`           ${l}`);
 }
 const section = (title) => console.log(`\n■ ${title}`);
-const err = (r) => (r.error ? `cannot connect (${r.error})` : `HTTP ${r.status} ${r.body?.detail ?? r.body?.message ?? r.body?.title ?? (r.text ?? '').slice(0, 120)}`.trim());
+const err = (r) =>
+  r.error
+    ? `cannot connect (${r.error})`
+    : `HTTP ${r.status} ${r.body?.detail ?? r.body?.message ?? r.body?.title ?? (r.text ?? '').slice(0, 120)}`.trim() +
+      (r.status === 429 ? ' — too many requests: searches are limited to 1 a second for the whole key (is the app planning a trip right now?), or the daily quota is used up' : '');
 const primary = (names, langs) => {
   if (!names?.length) return '';
   for (const l of langs) {

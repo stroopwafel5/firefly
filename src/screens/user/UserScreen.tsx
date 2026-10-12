@@ -5,7 +5,9 @@ import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ProfilePhoto } from '../../components/ProfilePhoto';
 import { Badge, Button, Chip, Empty, IconButton, Row, Screen, Section, openLink, styles as ui, toast, useCardStyle } from '../../components/ui';
+import { useLists } from '../../hooks/useLists';
 import { useAuth } from '../../context/AuthContext';
 import { wixThumb } from '../../data/camps';
 import { LANGS, useI18n } from '../../i18n';
@@ -17,6 +19,7 @@ import { listCamps } from '../../services/campService';
 import { eventsByIds } from '../../services/eventService';
 import { FriendRequest, getUsers, respondFriendRequest, watchIncomingRequests, watchNotifications } from '../../services/social';
 import { myTrips } from '../../services/tripService';
+import { placesFromPhone } from '../../services/placeStore';
 import { signOut, updateUserProfile } from '../../services/userService';
 import { colors, font, radius, space } from '../../theme';
 
@@ -39,26 +42,45 @@ export function UserScreen() {
   const [unread, setUnread] = useState(0);
 
   const signedIn = !!firebaseUser && !firebaseUser.isAnonymous && !!profile;
+  // The profile's lists with the phone's own changes not yet on the server (hearts, I'm going…).
+  const lists = useLists();
+  const bookedEvents = lists.list<string>('bookedEvents');
+  const favouriteEvents = lists.list<string>('favouriteEvents');
+  const favouriteCamps = lists.list<number>('favouriteCamps');
+  const favouriteAttraction = lists.list<string>('favouriteAttraction');
+  const eventsKey = `${bookedEvents.join(',')}|${favouriteEvents.join(',')}`;
+  const placesKey = favouriteAttraction.slice(0, 40).join(',');
 
   useEffect(() => {
     if (!signedIn || !profile) return;
-    listCamps(lang).then(setCamps);
-    eventsByIds(profile.bookedEvents, lang).then(setGoing);
-    eventsByIds(profile.favouriteEvents, lang).then(setFavEvents);
+    // Each list on its own: one that can't load leaves the others (and the page) working.
+    listCamps(lang).then(setCamps).catch(() => undefined);
+    eventsByIds(bookedEvents, lang).then(setGoing).catch(() => undefined);
+    eventsByIds(favouriteEvents, lang).then(setFavEvents).catch(() => undefined);
     myTrips(profile.uid).then(setTrips).catch(() => undefined);
     getUsers(profile.friends).then(setFriends).catch(() => undefined);
-    Promise.all(
-      profile.favouriteAttraction.slice(0, 20).map((id) =>
-        api.attractionDetails({ id, lang }).then((r) => Attraction.fromJSON(r.attraction)).catch(() => null),
-      ),
-    ).then((list) => setPlaces(list.filter((x): x is Attraction => !!x)));
+    // Favourite places: the copy kept on the phone when hearted; Tripadvisor places not on this
+    // phone (hearted on another one) are looked up by their id.
+    const ids = favouriteAttraction.slice(0, 40);
+    placesFromPhone(ids)
+      .then((onPhone) =>
+        Promise.all(
+          ids.map((id) =>
+            onPhone.get(id) ??
+            (/^\d+$/.test(id) ? api.attractionDetails({ id, lang }).then((r) => Attraction.fromJSON(r.attraction)).catch(() => null) : null),
+          ),
+        ),
+      )
+      .then((list) => setPlaces(list.filter((x): x is Attraction => !!x)))
+      .catch(() => undefined);
     const off1 = watchIncomingRequests(profile.uid, setRequests);
     const off2 = watchNotifications(profile.uid, (n) => setUnread(n.filter((x) => !x.read).length));
     return () => {
       off1();
       off2();
     };
-  }, [signedIn, profile, lang]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, profile?.uid, profile?.friends.join(','), lang, eventsKey, placesKey]);
 
   const languagePicker = (
     <Section title={t('user.language')}>
@@ -92,14 +114,16 @@ export function UserScreen() {
   }
 
   const booked = camps.filter((c) => profile.bookedCamps.includes(c.id));
-  const favCamps = camps.filter((c) => profile.favouriteCamps.includes(c.id));
+  const favCamps = camps.filter((c) => favouriteCamps.includes(c.id));
 
   const campRow = (list: Camp[]) =>
     list.length ? (
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         {list.map((c) => (
           <Pressable key={c.id} onPress={() => nav.navigate('CampPage', { campId: c.id })} style={[ui.card, card, { width: 220, marginEnd: space.md }]}>
-            <Image source={{ uri: wixThumb(c.photos[0].split('/media/')[1], 440, 240) }} style={{ width: 220, height: 110 }} contentFit="cover" />
+            {c.photos[0] ? (
+              <Image source={{ uri: c.photos[0].includes('/media/') ? wixThumb(c.photos[0].split('/media/')[1], 440, 240) : c.photos[0] }} style={{ width: 220, height: 110 }} contentFit="cover" />
+            ) : null}
             <View style={{ padding: space.sm }}>
               <Text style={font.h3} numberOfLines={1}>{c.name}</Text>
               <Text style={font.small}>{dateRange(c.startDate, c.endDate)}</Text>
@@ -139,11 +163,8 @@ export function UserScreen() {
       }
     >
       <Row style={{ alignItems: 'flex-start' }}>
-        {profile.photo ? (
-          <Image source={{ uri: profile.photo }} style={{ width: 72, height: 72, borderRadius: 36 }} />
-        ) : (
-          <MaterialCommunityIcons name="account-circle" size={72} color={colors.muted} />
-        )}
+        {/* Tap the photo (camera badge) to choose a new one from the phone. */}
+        <ProfilePhoto uid={profile.uid} photo={profile.photo} size={84} />
         <Text style={[font.body, { flex: 1 }]}>{profile.description || ''}</Text>
       </Row>
 

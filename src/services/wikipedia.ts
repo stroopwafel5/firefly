@@ -6,6 +6,8 @@ import { AI_IMAGE } from '../models';
 import type { Attraction, EventType, FunFact, KidText, PhotoSource, PlacePhoto } from '../models';
 import { PROVIDER_LANG } from '../i18n/localized';
 import { kidSummary, nameSimilarity, pickFunFact } from '../planner/kidify';
+import { introduction, isBusinessVenue, scriptOf, wikiScript, wikipediaTitle } from '../planner/describe';
+import { GeoHit, WikiPage, detailsUrl, geosearchUrl, readGeosearch, wikiAttractions } from '../planner/wikiNearby';
 import { api } from './api';
 
 /**
@@ -16,7 +18,9 @@ import { api } from './api';
  * Every text and photo comes back with the article URL it was taken from.
  */
 
-const HEADERS = { 'Api-User-Agent': config.wikiUserAgent, Accept: 'application/json' };
+// Wikipedia refuses anonymous app traffic (Android's default "okhttp/…" User-Agent): name the app
+// in both headers (Api-User-Agent is the one browsers may send; the app can set User-Agent itself).
+const HEADERS = { 'User-Agent': config.wikiUserAgent, 'Api-User-Agent': config.wikiUserAgent, Accept: 'application/json' };
 
 interface Summary {
   title: string;
@@ -30,13 +34,18 @@ interface Summary {
   lon?: number;
 }
 
-async function getJson<T>(url: string): Promise<T | null> {
+async function getJson<T>(url: string, timeoutMs = 15_000): Promise<T | null> {
+  // React Native's fetch has no time limit of its own: never let one slow answer hold up a trip.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(url, { headers: HEADERS, signal: ctrl.signal });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -65,7 +74,12 @@ export async function summary(wiki: string, title: string): Promise<Summary | nu
   };
 }
 
-/** Finds the Wikipedia article about a place: nearby articles whose title matches its name. */
+/**
+ * Finds the Wikipedia article about a place: nearby articles whose title matches its name. Only
+ * when the name is written in another alphabet than this Wikipedia's (a Hebrew name, English
+ * Wikipedia) is the article right on the spot (60 m) taken without a matching title — never for a
+ * Latin name in English Wikipedia, where a different title means a different thing.
+ */
 export async function findArticle(wiki: string, name: string, lat: number, lon: number): Promise<string | null> {
   const j = await getJson<{ query?: { geosearch?: Array<{ title: string; dist: number }> } }>(
     `https://${wiki}.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}%7C${lon}&gsradius=1000&gslimit=20&format=json&origin=*`,
@@ -78,9 +92,74 @@ export async function findArticle(wiki: string, name: string, lat: number, lon: 
     if (!best || s > best.s || (s === best.s && h.dist < best.dist)) best = { title: h.title, s, dist: h.dist };
   }
   if (best) return best.title;
-  // Different-language name: accept the closest article only if it is practically on the spot.
+  // Different-alphabet name: accept the closest article only if it is practically on the spot.
+  const script = scriptOf(name);
+  if (!script || script === wikiScript(wiki)) return null;
   const closest = hits[0];
   return closest && closest.dist < 60 ? closest.title : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Fuller descriptions for planned places                               */
+/* ------------------------------------------------------------------ */
+
+/** The same article in another language (Wikipedia's own interlanguage links). */
+async function inLanguage(fromWiki: string, title: string, toWiki: string): Promise<string | null> {
+  if (fromWiki === toWiki) return title;
+  const j = await getJson<{ query?: { pages?: Array<{ langlinks?: Array<{ title: string }> }> } }>(
+    `https://${fromWiki}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=langlinks&lllang=${toWiki}&redirects=1&format=json&formatversion=2&origin=*`,
+  );
+  return j?.query?.pages?.[0]?.langlinks?.[0]?.title ?? null;
+}
+
+/** The article about a Wikidata item in one language. */
+async function fromWikidata(qid: string, wiki: string): Promise<string | null> {
+  const j = await getJson<{ entities?: Record<string, { sitelinks?: Record<string, { title: string }> }> }>(
+    `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&props=sitelinks&sitefilter=${wiki}wiki&format=json&origin=*`,
+  );
+  return j?.entities?.[qid]?.sitelinks?.[`${wiki}wiki`]?.title ?? null;
+}
+
+async function articleFor(a: Attraction, wiki: string): Promise<string | null> {
+  const linked = wikipediaTitle(a.link);
+  if (linked) {
+    const t = await inLanguage(linked[0], linked[1], wiki);
+    if (t) return t;
+  }
+  if (a.wikidataId) {
+    const t = await fromWikidata(a.wikidataId, wiki);
+    if (t) return t;
+  }
+  // A club, karaoke bar or restaurant: only an article linked to it (above), never one found nearby.
+  if (isBusinessVenue(a)) return null;
+  return findArticle(wiki, a.name, a.location.locLat, a.location.locLon);
+}
+
+const describeCache = new Map<string, Promise<{ text: string; url: string; source: 'wikipedia' } | null>>();
+
+/**
+ * A fuller description of a place: the introduction of its Wikipedia article in the trip's
+ * language (found through its own link, its Wikidata item, or nearby articles with its name);
+ * in English when that language has none and the place has hardly any description at all.
+ * Always with the article's address, shown under the text.
+ */
+export function describeAttraction(a: Attraction, lang: Lang): Promise<{ text: string; url: string; source: 'wikipedia' } | null> {
+  const key = `${lang}:${a.id}`;
+  let p = describeCache.get(key);
+  if (!p) {
+    p = (async () => {
+      const wikis = [PROVIDER_LANG[lang].wiki];
+      if (lang !== 'en' && a.description.trim().length < 60) wikis.push('en');
+      for (const wiki of wikis) {
+        const title = await articleFor(a, wiki);
+        const s = title ? await summary(wiki, title) : null;
+        if (s?.extract) return { text: introduction(s.extract), url: s.url, source: 'wikipedia' as const };
+      }
+      return null;
+    })();
+    describeCache.set(key, p);
+  }
+  return p;
 }
 
 const kidCache = new Map<string, { kidText?: KidText; funFact?: FunFact }>();
@@ -102,6 +181,7 @@ export async function kidContent(a: Attraction, lang: Lang): Promise<{ kidText?:
   let found: Summary | null = null;
   let foundWiki = '';
   for (const wiki of wikis) {
+    if (isBusinessVenue(a)) break;
     const title = await findArticle(wiki, a.name, lat, lon);
     if (!title) continue;
     found = await summary(wiki, title);
@@ -193,4 +273,24 @@ export function placePhotoFromWikipedia(name: string, lang: Lang): Promise<Place
     placePhotoCache.set(key, p);
   }
   return p;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sights straight from Wikipedia (the phone's last resort)             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Real sights around a place from Wikipedia's articles with coordinates, asked from the phone
+ * (see planner/wikiNearby.ts). Used when the server can't answer or finds almost nothing.
+ */
+export async function wikipediaSightsNear(lat: number, lon: number, lang: Lang, radiusKm = 10): Promise<Attraction[]> {
+  const geo = await getJson<{ query?: { geosearch?: GeoHit[] } }>(geosearchUrl(lat, lon, radiusKm));
+  const hits = geo ? readGeosearch(geo) : [];
+  if (!hits.length) return [];
+  const batches: number[][] = [];
+  for (let i = 0; i < Math.min(hits.length, 200); i += 50) batches.push(hits.slice(i, i + 50).map((h) => h.pageid));
+  const pages = (
+    await Promise.all(batches.map((ids) => getJson<{ query?: { pages?: WikiPage[] } }>(detailsUrl(ids, lang)).then((j) => j?.query?.pages ?? [])))
+  ).flat();
+  return wikiAttractions(hits, pages, lang);
 }

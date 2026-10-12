@@ -3,7 +3,7 @@ import { EVENT_TYPES, EventType } from '../models';
 import type { Attraction } from '../models';
 
 /** Places that are never suggested on a trip with children. */
-const ADULT_ONLY = /\bbars?\b|pub|nightclub|night ?life|casino|strip|wine bar|brewer|distiller|cannabis|coffeeshop|sex|erotic/i;
+const ADULT_ONLY = /\bbars?\b|pub|night ?club|night ?life|casino|strip|wine bar|brewer|distiller|cannabis|coffeeshop|sex|erotic/i;
 
 /**
  * Turns TripAdvisor category/subcategory/group names into our 8 types, a visit length and
@@ -65,4 +65,15 @@ export function isSuitable(a: Attraction, familyTrip: boolean, kidFriendlyOnly: 
   if ((familyTrip || kidFriendlyOnly) && ADULT_ONLY.test(`${a.category} ${a.name}`)) return false;
   if (kidFriendlyOnly) return a.types.includes('Kid Friendly') || a.types.includes('Family') || a.types.includes('Nature');
   return true;
+}
+
+/** Kinds of places where you can always eat (a meal can be had there during a long visit). */
+const FOOD_KINDS = new Set(['themepark', 'zoo', 'aquarium']);
+/** A place saying it has somewhere to eat ("the museum has a café and a shop"). */
+const FOOD_THERE = /(?:^|[^\p{L}])(restaurants?|caf[eé]s?|cafeteria|food court|snack bar|canteen|dining|bistro|brasserie)(?![\p{L}])|מסעדה|בית קפה|ресторан|кафе/iu;
+
+/** Can you eat at this place during a long visit (theme parks, zoos, a museum with a café)? */
+export function hasFoodOnSite(a: Pick<Attraction, 'kind' | 'name' | 'description' | 'category'>): boolean {
+  if (FOOD_KINDS.has(a.kind)) return true;
+  return FOOD_THERE.test(`${a.name} ${a.category} ${a.description.slice(0, 600)}`);
 }

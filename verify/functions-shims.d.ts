@@ -12,8 +12,8 @@ declare module 'firebase-functions/v2/https' {
   export interface CallableRequest<T = unknown> { data: T; auth?: { uid: string; token: Record<string, any> }; }
   export function onCall<T = unknown>(handler: (req: CallableRequest<T>) => any): any;
   export function onCall<T = unknown>(opts: object, handler: (req: CallableRequest<T>) => any): any;
-  export interface Request { headers: Record<string, string | string[] | undefined>; body: unknown; rawBody?: Buffer; method: string }
-  export interface Response { status(code: number): Response; send(body?: unknown): void; json(body: unknown): void }
+  export interface Request { headers: Record<string, string | string[] | undefined>; body: unknown; rawBody?: Buffer; method: string; ip?: string }
+  export interface Response { status(code: number): Response; send(body?: unknown): void; json(body: unknown): void; set(field: string, value: string): Response }
   export function onRequest(opts: object, handler: (req: Request, res: Response) => any): any;
 }
 declare module 'firebase-functions/v2/firestore' {

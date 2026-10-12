@@ -59,6 +59,20 @@ export interface SearchEventsRequest extends Partial<LatLon> {
   lang: Lang;
 }
 
+/** How many attractions each source gave (the server's attractionsNear). */
+export interface AttractionSources {
+  tripadvisor?: number;
+  tripadvisorHttp?: number[];
+  google?: number;
+  wikidata?: number;
+  osm?: number;
+  backup?: number;
+  /** Wikipedia's articles about places to visit (the server's search). */
+  wikipedia?: number;
+  /** The search looked wider than the town (a quiet area). */
+  widened?: boolean;
+}
+
 export interface SearchEventsResponse {
   events: EventJSON[];
   /** Which providers answered, e.g. ["firestore", "ticketmaster", "google-events"]. */
@@ -69,7 +83,7 @@ export interface SearchEventsResponse {
 
 /** The functions the Weekend tab and the trip builder call; see warmUp(). */
 const WARM_FUNCTIONS = [
-  'geocode', 'reverseGeocode', 'routeLine', 'travelMatrix', 'attractionsNear', 'restaurantsNear',
+  'geocode', 'placeSuggest', 'reverseGeocode', 'routeLine', 'travelMatrix', 'attractionsNear', 'restaurantsNear',
   'hotelsNear', 'placeSearch', 'searchEvents',
 ];
 let warmedAt = 0;
@@ -102,18 +116,17 @@ export const api = {
    * ("busy" = over its rate limit, so the list came from the free sources).
    */
   attractionsNear: callable<
-    LatLon & { lang: Lang; radiusKm: number; want?: number; landmarks?: boolean },
-    { items: AttractionJSON[]; tripadvisor?: 'ok' | 'busy' | 'off' | 'error' }
+    LatLon & { lang: Lang; radiusKm: number; want?: number; landmarks?: boolean; types?: string[] },
+    { items: AttractionJSON[]; tripadvisor?: 'ok' | 'busy' | 'off' | 'error'; sources?: AttractionSources }
   >('attractionsNear', 90_000),
-  /** Same search, also checking each place for the chosen accessibility needs (slower). */
+  /** Same search, also checking each place for the chosen accessibility needs (answers within ~100 s). */
   attractionsNearAccessible: callable<
-    LatLon & { lang: Lang; radiusKm: number; want?: number; needs: string[] },
-    { items: AttractionJSON[]; tripadvisor?: 'ok' | 'busy' | 'off' | 'error' }
-  >(
-    'attractionsNear',
-    170_000,
+    LatLon & { lang: Lang; radiusKm: number; want?: number; needs: string[]; types?: string[] },
+    { items: AttractionJSON[]; tripadvisor?: 'ok' | 'busy' | 'off' | 'error'; sources?: AttractionSources }
+  >('attractionsNear', 150_000),
+  attractionAccessibility: callable<{ id: string; website: string; name?: string; lat?: number; lon?: number }, { needs: string[]; sources: AccessibilitySource[] }>(
+    'attractionAccessibility',
   ),
-  attractionAccessibility: callable<{ id: string; website: string }, { needs: string[]; sources: AccessibilitySource[] }>('attractionAccessibility'),
   restaurantsNear: callable<LatLon & { lang: Lang; want?: number }, { items: RestaurantJSON[]; tripadvisor?: 'ok' | 'busy' | 'off' | 'error' }>(
     'restaurantsNear',
     60_000,
@@ -122,6 +135,11 @@ export const api = {
     LatLon & { lang: Lang; checkIn: string; checkOut: string; adults: number; kids: number },
     { items: HotelJSON[] }
   >('hotelsNear'),
+  /** Places matching what is typed in the trip form (Hebrew, Russian or English). */
+  placeSuggest: callable<{ query: string; lang: Lang; typing?: boolean }, { items: Array<{ name: string; detail: string; lat: number; lon: number; country: string }> }>(
+    'placeSuggest',
+    15_000,
+  ),
   placeSearch: callable<{ query: string; lang: Lang } & Partial<LatLon>, { items: AttractionJSON[] }>('placeSearch'),
   attractionDetails: callable<{ id: string; lang: Lang }, { attraction: AttractionJSON; reviews: ReviewJSON[] }>(
     'attractionDetails',
@@ -132,6 +150,8 @@ export const api = {
   setGoing: callable<{ eventId: string; going: boolean; event?: EventJSON }, { ok: true }>('setGoing'),
   /** Keeps a copy of an event the user favourited, so it stays in their profile after it leaves search. */
   saveEvent: callable<{ event: EventJSON }, { ok: true }>('saveEvent'),
+  /** "Take me anywhere": Ticketmaster's events within 1,500 km on the dates (functions/src/events/around.ts). */
+  eventsAround: callable<LatLon & { from: string; to: string; lang: Lang }, { events: EventJSON[] }>('eventsAround', 45_000),
   reportPhoto: callable<{ url: string; sourcePage: string; itemId: string; reason: string }, { ok: true }>('reportPhoto'),
 
   createPaypalOrder: callable<{ bookingId: string }, { orderId: string; approveUrl: string }>('createPaypalOrder'),

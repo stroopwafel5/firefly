@@ -7,7 +7,8 @@ import { HOUR, cached, haversineKm, isLang, isWarmup, requireAuth, secret } from
 import { dropHiddenPhotos, finishGoogleEvents } from './enrich';
 import { googleEventsRaw, googleQueries } from './googleEvents';
 import { ticketmasterEvents } from './ticketmaster';
-import { EVENT_TYPES, EventJSON, EventType, SearchArgs, validateEvent } from './types';
+import { scoutNear } from './scout';
+import { EVENT_TYPES, EventJSON, EventType, SearchArgs, localizeEvent, validateEvent } from './types';
 
 export const SEARCH_SECRETS = [GOOGLE_SERVER_KEY, SERPAPI_KEY, TICKETMASTER_KEY];
 const MAX_RADIUS_KM = 150;
@@ -17,7 +18,7 @@ const MAX_WINDOW_DAYS = 62;
 async function adminEvents(a: SearchArgs): Promise<EventJSON[]> {
   const snap = await getFirestore().collection('events').where('endDate', '>=', a.from).limit(500).get();
   return snap.docs
-    .map((d: { id: string; data(): unknown }) => ({ ...(d.data() as EventJSON), id: d.id }))
+    .map((d: { id: string; data(): unknown }) => localizeEvent({ ...(d.data() as EventJSON), id: d.id }, a.lang))
     .filter((e: EventJSON) => e.startDate <= a.to && haversineKm(a.lat, a.lon, e.location.locLat, e.location.locLon) <= a.radiusKm);
 }
 
@@ -59,6 +60,7 @@ export async function runSearch(a: SearchArgs, opts: RunOptions = {}): Promise<{
   };
   const jobs: Array<[string, Promise<EventJSON[]>]> = [
     ['firestore', adminEvents(a)],
+    ['weekly-search', scoutNear(a)],
     ['ticketmaster', secret(TICKETMASTER_KEY) ? ticketmasterEvents(a) : Promise.resolve([])],
     ['google-events', google()],
   ];
@@ -66,7 +68,8 @@ export async function runSearch(a: SearchArgs, opts: RunOptions = {}): Promise<{
   const sources: string[] = [];
   const all: EventJSON[] = [];
   settled.forEach((r, i) => {
-    const configured = i === 0 || (i === 1 ? !!secret(TICKETMASTER_KEY) : !!secret(SERPAPI_KEY));
+    const name = jobs[i][0];
+    const configured = name === 'firestore' || name === 'weekly-search' || (name === 'ticketmaster' ? !!secret(TICKETMASTER_KEY) : !!secret(SERPAPI_KEY));
     if (r.status === 'rejected') {
       logger.warn(`event source ${jobs[i][0]} failed`, r.reason);
       return;
@@ -128,7 +131,19 @@ export const searchEvents = onCall({ secrets: SEARCH_SECRETS, timeoutSeconds: 12
 
   const types = Array.isArray(d.types) ? (d.types.filter((t) => (EVENT_TYPES as readonly string[]).includes(t as string)) as EventType[]) : [];
   // Re-check reported photos on every call, so a report takes effect even on cached results.
-  const visible = hit ? (await dropHiddenPhotos(value.events)).filter((e) => validateEvent(e).length === 0) : value.events;
+  let visible = hit ? (await dropHiddenPhotos(value.events)).filter((e) => validateEvent(e).length === 0) : value.events;
+  if (hit) {
+    // Admin events change between searches (the upload page): always the current ones, not the 6-hour copy.
+    const fresh = await adminEvents(args).catch(() => null);
+    if (fresh) {
+      const current = (await dropHiddenPhotos(fresh)).filter((e) => e.endDate >= args.from && validateEvent(e).length === 0);
+      visible = dedupe([...current, ...visible.filter((e) => e.origin !== 'admin')]).sort(
+        (x, y) =>
+          x.startDate.localeCompare(y.startDate) ||
+          haversineKm(lat, lon, x.location.locLat, x.location.locLon) - haversineKm(lat, lon, y.location.locLat, y.location.locLon),
+      );
+    }
+  }
   const events = types.length ? visible.filter((e) => e.types.some((t) => types.includes(t))) : visible;
   return { events, sources: value.sources, center: { lat, lon, name: placeName }, cached: hit };
 });

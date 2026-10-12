@@ -79,3 +79,14 @@ test('event types from titles in three languages', () => {
   assert.ok(inferTypes('Выставка в музее').includes('History'));
   assert.deepEqual(inferTypes('Something'), ['Festival']);
 });
+
+test('a liked event is kept for the profile even without a credited photo; ids with "/" get a safe document id', async () => {
+  const { savableEvent, savedEventDocId } = await import('../src/events/types');
+  const base = { id: 'serp/abc 1', name: 'Jazz night', startDate: '2026-10-20', endDate: '2026-10-20', location: { locLat: 52.37, locLon: 4.9 }, link: 'https://example.org/jazz', photo_urls: [], photoSources: [], types: [] };
+  assert.ok(savableEvent(base), 'no photo is fine for a favourite');
+  assert.ok(!savableEvent({ ...base, name: ' ' }));
+  assert.ok(!savableEvent({ ...base, link: 'javascript:alert(1)' }));
+  assert.ok(!savableEvent({ ...base, location: { locLat: 'x', locLon: 4.9 } }));
+  assert.ok(!savableEvent({ ...base, description: 'x'.repeat(40_000) }), 'size limit');
+  assert.equal(savedEventDocId('serp/abc 1'), 'serp_abc 1');
+});

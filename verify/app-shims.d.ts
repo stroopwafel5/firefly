@@ -32,6 +32,7 @@ declare module 'react' {
     interface Context<T> { Provider: any; _v?: T }
     function createContext<T>(value: T): Context<T>;
     function useContext<T>(c: Context<T>): T;
+    function useSyncExternalStore<T>(subscribe: (onChange: () => void) => () => void, getSnapshot: () => T): T;
     type ComponentProps<T> = T extends (p: infer P) => any ? P : T extends new (p: infer P) => any ? P : any;
     type ComponentType<P = any> = (p: P) => any;
     type FC<P = {}> = (p: P) => any;
@@ -89,7 +90,7 @@ declare module 'react-native' {
   export const I18nManager: { isRTL: boolean; allowRTL(b: boolean): void; forceRTL(b: boolean): void };
   export const DevSettings: { reload(): void };
   export const ToastAndroid: { show(message: string, duration: number): void; LONG: number; SHORT: number };
-  export const Alert: { alert(title: string, message?: string, buttons?: Array<{ text: string; onPress?: () => void; style?: string }>): void };
+  export const Alert: { alert(title: string, message?: string, buttons?: Array<{ text: string; onPress?: () => void; style?: string }>, options?: { cancelable?: boolean; onDismiss?: () => void }): void };
   export const PanResponder: { create(config: any): { panHandlers: any } };
   export function useWindowDimensions(): { width: number; height: number };
   export const Animated: any;
@@ -120,7 +121,7 @@ declare module 'expo-location' {
   export function getCurrentPositionAsync(o?: object): Promise<Pos>;
 }
 declare module 'expo-image-picker' {
-  export function launchImageLibraryAsync(o?: object): Promise<{ canceled: boolean; assets?: Array<{ uri: string }> | null }>;
+  export function launchImageLibraryAsync(o?: object): Promise<{ canceled: boolean; assets?: Array<{ uri: string; fileSize?: number; mimeType?: string; width: number; height: number }> | null }>;
 }
 declare module 'expo-document-picker' {
   export function getDocumentAsync(o?: object): Promise<{ canceled: boolean; assets?: Array<{ uri: string; name: string; mimeType?: string }> | null }>;
@@ -215,7 +216,7 @@ declare module 'firebase/firestore' {
   export interface DocumentReference { id: string; path: string }
   export interface CollectionReference { id: string }
   export interface Query { _q?: true }
-  export interface DocumentSnapshot { id: string; exists(): boolean; data(): DocumentData | undefined }
+  export interface DocumentSnapshot { id: string; exists(): boolean; data(): DocumentData | undefined; metadata: { hasPendingWrites: boolean; fromCache: boolean } }
   export interface QueryDocumentSnapshot { id: string; data(): DocumentData }
   export interface QuerySnapshot { docs: QueryDocumentSnapshot[]; empty: boolean; size: number }
   export type Firestore = any;

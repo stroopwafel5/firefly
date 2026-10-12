@@ -97,10 +97,10 @@ Firefly's keys are already filled in:
 npm i -g firebase-tools && firebase login
 npm run firebase-config                  # .env + .firebaserc from firebase-config.txt (§2.2)
 npm run push-secrets                     # uploads functions/.secret.local; empty keys become "unset"
-firebase deploy --only firestore:rules,firestore:indexes,storage,functions
+firebase deploy --only firestore:rules,firestore:indexes,storage,functions,hosting
 npm run seed                             # the 16 camps (and the prices PayPal charges)
 npm run set-admin -- you@example.com
-npm run attractions:build                # the 5,000-attraction backup list from Wikidata (once; safe to stop and rerun)
+npm run attractions:build                # the 10,000-attraction backup list from Wikidata (once; safe to stop and rerun)
 ```
 
 Always run `npm run push-secrets` before deploying when the server has new keys (it uploads empty
@@ -108,11 +108,15 @@ ones as a placeholder). Otherwise `firebase deploy` stops and asks for each miss
 answer fails with *"Secret Payload cannot be empty"* — nothing is deployed.
 
 `attractions:build` reads Wikidata (free, no key) from your computer: a map search around each of
-the 438 cities and tourist towns, then the national parks, waterfalls, caves and reserves of each
-country — 536 searches, one at a time (Wikidata's public service allows about one second of
-searching per second). What to expect:
+the 438 cities and tourist towns (the 150 best-known places within 8 km in the 100 biggest cities —
+Prague, Paris, Rome… — and the 100 best-known within 12 km elsewhere), then, per country, the
+national parks, waterfalls, caves and reserves, and the famous heritage outside the cities
+(castles, palaces, ruins, monasteries, zoos, theme parks — Karlštejn near Prague, Versailles near
+Paris) — 585 searches, one at a time (Wikidata's public service allows about one second of
+searching per second; expect 30–60 minutes the first time). The best 10,000 are kept, at most 120
+in any ~25 km square, a quarter of them nature. What to expect:
 
-- A progress line every 10 searches, e.g. *"40/536 searches · 3 min so far · about 37 min left"*.
+- A progress line every 10 searches, e.g. *"40/585 searches · 3 min so far · about 40 min left"*.
   Each search should take a few seconds. If the first progress lines say much more than an hour
   is left, Wikidata is slow today: stop it (Ctrl+C) and run it again later — nothing is lost.
 - Every answer is saved in Firestore (`attractionSearches`) as soon as it arrives, so **Ctrl+C is
@@ -126,7 +130,7 @@ searching per second). What to expect:
   `functions/data/attractions-europe.json` so you can open and check it.
 
 After that the server keeps it fresh by itself: every night (`refreshAttractionCache`, 03:30 Israel
-time) it re-runs the searches that are more than 30 days old, as many as fit in 20 minutes, and most
+time) it re-runs the searches that are more than 30 days old, as many as fit in 17 minutes, and most
 nights there is nothing to do. Until the first build, the planner still gets Wikidata places live
 around each city.
 
@@ -484,25 +488,53 @@ published there, and is it a real photograph rather than AI art or a generic sto
 paste the address into Google Maps (is it a real place?). If a photo is wrong, report it in the app
 (long-press the photo → *Report this photo*); it is hidden at once.
 
-### 5.2 The weekly offline snapshot (150 events, 50 in Israel)
+### 5.2 The event list (about 950 events, kept up to date every day)
 
+The app downloads this list whenever it is online, keeps it for offline use and shows it as the
+week's picks; trips and *Take me anywhere* use it too. It covers the **next four weeks**:
+
+| Region | Events | Cities searched (plan.ts) |
+|---|---|---|
+| Israel | 50 | 16 Israeli cities |
+| Europe | 500 | 85 cities, led by the Netherlands, Belgium, Germany, Czechia and Poland |
+| Japan | 100 | 15 cities |
+| South-East Asia | 100 | 20 cities |
+| Africa | 100 | 27 cities, South Africa first |
+| Elsewhere | 100 | the Americas, Oceania, Korea, the Gulf, the Caucasus |
+
+Where the events come from:
+1. **Every evening at 22:00 — the web search** (`eventScout`, `functions/src/events/scout*.ts`), a
+   seventh of the week's limit each night, starting at a different group of cities each day.
+   Claude searches the web, a few cities at a time, for in-person events on those four weeks —
+   outdoor ones first (festivals, Christmas and seasonal markets, fairs, parades, light festivals,
+   open-air shows), then family ones (children's tours, workshops, shows) — and lists each
+   event's own page. Each page then goes through **exactly the same steps as an admin upload**
+   (§5.4): Claude reads it, the place is found on the map, a real photo is picked, texts are
+   written in English, Hebrew and Russian, and it must pass the same checks as every event. Kept
+   events stay until they end (`scoutEvents/*`) and show in every event search near them.
+   Pages already read aren't read again (`scoutSeen/*`; a page held back is retried after two
+   weeks). Settings in `functions/.env`: `EVENTS_SCOUT=on|off`, `EVENTS_SCOUT_MAX` (pages read per
+   week, default 250 — the cost limit) and `EVENTS_SCOUT_MODEL` (default `claude-haiku-5-5`).
+   Cost: about 300 web searches ($10 per 1,000) and 250 short page readings a week — roughly
+   $3–5 a week with the default model. The Anthropic account needs credit.
+2. **Every morning at 04:00 — the list** (`refreshFallbackEvents`): for every city, Ticketmaster
+   (free), the web search's events and admins' uploads; on **Mondays** also Google's listings via
+   SerpApi within its budget (Israel first, then a weekly rotation of the cities Ticketmaster
+   doesn't cover — Japan, South-East Asia and Africa first). Each region is filled round-robin over
+   its cities (weekend events first) up to its number.
+
+Run them by hand (admin token; each takes several minutes):
 ```bash
-time acall refreshFallbackNow '{}' | jq      # takes a few minutes
-# → {"result":{"count":…,"israel":…,"from":"2026-10-16","to":"2026-10-25","googleSearches":30}}
+time acall scoutEventsNow '{}' | jq        # a whole week's searches at once → {"result":{"searched":…,"listed":…,"read":…,"published":…,"byRegion":{…}}}
+time acall refreshFallbackNow '{}' | jq    # → {"result":{"count":…,"israel":…,"regions":{"europe":…,"japan":…},"from":…,"to":…}}
 call refreshFallbackNow '{}' | jq .error.status   # with a guest token → "PERMISSION_DENIED"
 ```
 
-- `from` is the **next** Friday and `to` the Sunday a week later (run on Friday 9 Oct 2026, that gives
-  16–18 Oct and 23–25 Oct).
-- `count` is at most 150 and `israel` at most 50. They can be lower if the providers have fewer
-  qualifying events: an event without a real photo or a mappable address is never padded in.
-- `googleSearches` is how many SerpApi searches this run spent. At most `SERPAPI_FALLBACK_MAX` (30),
-  and always leaving 5 spare.
-- Firestore `fallback/events` holds `{parts, count, israel, world, from, to, googleSearches,
-  googleCities, generatedAt}`, and `fallback/events-0…N` hold the events in chunks of 50.
-  `googleCities` shows which cities got a Google search this week; the world part rotates every week.
-- Israeli events are spread round-robin over 16 cities, so they aren't all in Tel Aviv, and
-  weekend events come first.
+- `count` can be lower than 950 when the sources have fewer qualifying events: an event without a
+  real photo or a mappable address is never padded in. The first weeks of the web search fill
+  Japan, South-East Asia and Africa; after that most weeks only add what is new.
+- Firestore `fallback/events` holds `{parts, count, israel, world, regions, from, to,
+  googleSearches, googleCities, generatedAt}`; `fallback/events-0…N` hold the events, 50 per part.
 
 ### 5.3 In the app
 
@@ -530,6 +562,82 @@ call refreshFallbackNow '{}' | jq .error.status   # with a guest token → "PERM
   The form refuses with a clear message. The same rules are enforced again by Firestore and the
   server, so a modified app can't bypass them.
 
+### 5.4 Uploading the weekly events list (admins)
+
+The team's weekly list goes straight into the app from **https://dreamroute-firefly.web.app/upload**
+(any phone or computer). Each event is read from its page and published in English, Hebrew and
+Russian — no app update needed.
+
+**Set up once**
+
+1. **Passcode** — `EVENTS_UPLOAD_PASSCODE` in `functions/.secret.local` (a generated one is already
+   there; change it if you like). Several admins can each have their own, and their name is saved
+   with what they upload: `EVENTS_UPLOAD_PASSCODE=anna:first-code, david:second-code` (8+
+   characters each).
+2. **Claude** — the pages are read by Claude with the `ANTHROPIC_API_KEY` that is already set. The
+   account needs credit (Claude Console → *Plans & Billing*); without it every event comes back
+   *Failed* with the message from Claude. The model is `EVENTS_AI_MODEL` in `functions/.env`
+   (`claude-sonnet-5-5`; it falls back to `claude-haiku-5-5` if that one isn't available).
+3. `npm run push-secrets`, then `firebase deploy --only functions,hosting`. If the first hosting
+   deploy says Hosting isn't set up: Firebase console → **Hosting** → *Get started* once, then deploy
+   again.
+
+**Each week**
+
+1. Open the page, enter the passcode (tick *Remember on this device* on your own phone).
+2. Check **Weekend starting** — it is already the coming Thursday.
+3. Choose the .txt file (or paste the list) → **Read the list**. You see every event with the day(s)
+   it was listed on and its link, before anything is saved.
+4. **Add these events.** Each page takes 15–30 seconds; the page shows the progress and can be closed
+   — the work goes on. Results:
+   - **In the app** — published, with its names in the three languages, date, time, place and photo.
+     Notes under it are things to double-check (e.g. *"Times are not stated on the page"*).
+   - **Held back** — not published, with the reason. The usual one is an Instagram post: Instagram
+     can't be read, so write the place (and time) on the line under the link and upload again.
+   - **Failed** — Claude or the page didn't answer; upload again later.
+5. **Uploaded events in the app** lists everything upcoming from uploads; *Remove from the app* takes
+   one down at once.
+
+**The list format** (Russian, Hebrew or English, as the team writes it now):
+
+```
+Софаш                          ← the list's title: ignored
+
+Четверг                        ← a day heading (can carry a date: "Четверг 15.10", "שישי 16/10")
+**                             ← separators are ignored
+Балет Щелкунчик в Нетании      ← the event's title (kept as its name in the list's language)
+https://ru.kupatbravo.co.il/…  ← its link on the next line
+
+Большой пикник для веганов
+https://www.instagram.com/p/…
+Sacher Park, Jerusalem, 11:00  ← optional notes under the link, used when the page can't be read
+```
+
+The same link under several days becomes one event on all of them. A day heading after Saturday
+("Воскресенье") is the Sunday after.
+
+**What the server does with each event:** fetches the page; Claude picks the occurrence on the listed
+day (e.g. the Netanya show of a touring ballet), the times, venue, prices and event types, and writes
+the name, a 2–3 sentence description and the price line in English, Hebrew and Russian — only from
+what the page or your notes say. The photo is one of the page's own images (a real photo first,
+the event's artwork otherwise, never a logo); without one, Wikipedia's photo of the venue or town,
+credited. The place is found on the map with Google; the event is checked with the same rules as
+every other event (in person, sourced, photo with its source). If the page's date misses the listed
+day, the listed day wins and a note says so.
+
+**Uploading again** is safe: the same link with the same first day updates its event instead of adding
+a second one — the way to fix a held-back event.
+
+**Where they appear:** *Israel this week* / *Around the world* (the app checks for new uploads every
+10 minutes), *Near me* (live search, at once), and offline (kept on the phone).
+
+**Safety:** the passcode is checked on the server only; 8 wrong passcodes lock that address for 15
+minutes. The page is not indexed by search engines. Each event is one Claude request.
+
+**Tests:** `functions/test/upload.test.ts` runs the team's real list from 10 Oct 2026
+(`functions/test/fixtures/weekend-ru.txt`) through the parser, and the whole processing with a fake
+page, Claude and map.
+
 ---
 
 ## 6. How Firefly builds a trip
@@ -555,10 +663,13 @@ something else isn't. `npm run explain` prints all of it for a real trip (§6.7)
  4. Collect for every place: events · restaurants · one hotel per stay
                │
                ▼
- 5. Each day's timetable with real travel times (opening hours, meals, fixed-time events)
+ 5. Each day's timetable with real travel times (opening hours, meals, events mixed in)
                │
                ▼
- 6. Family trip? The kids' plan: simple descriptions + a sourced fun fact per place
+ 6. Fuller descriptions for planned places (Wikipedia) · warnings for sensitive areas
+               │
+               ▼
+ 7. Family trip? The kids' plan: simple descriptions + a sourced fun fact per place
 ```
 
 It is a **greedy** planner: it always takes the best thing that fits *right now*. That makes it fast
@@ -568,9 +679,31 @@ can drag and drop, and why the app checks their changes (§6.8).
 ### 6.2 Where each day is (the route)
 
 - **Checks:** at least 1 adult; the end date is on or after the start date; at most **30 days**.
-- **Cities** are found with Google Geocoding. An empty "Ending city" means "same as the starting city".
-  Start and end **under 30 km apart** = a round trip (you come back to the start on the last day);
-  otherwise one-way (the last day is in the end city).
+- **Cities** are found with Google Geocoding. The **Destination** field is always shown; empty means a
+  round trip (you come back to the starting city). Start and end **under 30 km apart** = a round trip
+  (you come back to the start on the last day); otherwise one-way (the last day is in the end city).
+- **Your destinations come first.** The form has *Starting city*, then *Destination 1, 2…* (each
+  added with **+ Add more destinations**, which puts the new field above the final destination), then
+  **Final destination**. The trip visits the destinations **in the order of the fields** and ends at
+  the final destination — Vienna, *Venice*, *Amsterdam*, final *Grenoble* = Vienna → Venice →
+  Amsterdam → Grenoble. With the final destination empty, or *Come back to the starting city at the
+  end* on, it ends back at the start (then the final destination, if given, is the last one visited).
+  - A destination counts as visited only after **a day spent in it** (within 15 km) — never because
+    the route passed a town nearby (Venice used to be "reached" from a town 25–40 km away and skipped).
+  - **Each destination gets its share of the days:** the days not needed for travelling are shared
+    equally by the start, each destination and the final destination (28 days Vienna → Venice →
+    Amsterdam → Grenoble: about 6 days in Venice and 6 in Amsterdam). The trip stays that long —
+    exploring around it once its own sights are used up — and leaves the start and the towns in
+    between in time for the next ones to get theirs. Towards a destination it takes the stops that
+    leave the fewest days of travel (no zig-zag through big cities).
+  - Must-see places are fitted in only when every destination still gets its days.
+  - **Not enough days:** the destinations that can't fit (with the travel between them) are left out,
+    and the traveller is told at once and at the top of the plan: *"There aren't enough days to also
+    visit Amsterdam…"*. Example: Vienna → Venice → Amsterdam → Grenoble in 6 days.
+  - A destination in another country opens the trip to that country. The trip's name lists them all.
+  - To test: Vienna, 28 days, *Destination 1* Venice, *Destination 2* Amsterdam, final Grenoble → both
+    visited, in that order, with several days in each; 14 days → at least 2 days in each; 6 days →
+    Amsterdam left out with the message.
 - **Day 1** is in the starting city. Each following morning the planner decides: **stay, or move on**.
 - **Move on** when the place has **run out of attractions rated 9.0 or more AND of attractions rated
   7.0 or more that fit your niches** (one of your chosen types; Family / Kid Friendly on a family trip;
@@ -582,36 +715,219 @@ can drag and drop, and why the app checks their changes (§6.8).
 - **On schedule:** the trip also moves on when it must, to reach the destination by the last day
   (at most **450 km a day by car, 400 km by public transport**).
 - **The next stop** is the next **big city**: one of the 2,575 cities with 150,000+ people or capitals
-  (GeoNames, bundled in `src/data/bigCities.ts`) plus 48 famous tourist towns (Venice, Bruges,
-  Dubrovnik, Český Krumlov, Kotor…). It must be **within a day's travel** (60–450 km), keep the
+  (GeoNames, bundled in `src/data/bigCities.ts`) plus about 320 famous towns worldwide (Venice,
+  Bruges, Český Krumlov, Kotor…; Luang Prabang, Vang Vieng, Hoi An, Siem Reap, Pai; Sighnaghi,
+  Stepantsminda, Borjomi; Wuzhen, Yangshuo, Pingyao; Chefchaouen, Essaouira; Stellenbosch,
+  Knysna; Cusco's Aguas Calientes, San Pedro de Atacama, Banff…). It must be **within a day's travel** (60–450 km), keep the
   destination reachable in the days left, and on a one-way trip **get closer** to the destination
   **without a big detour** (hop + rest of the way ≤ 1.3 × the direct distance + 30 km) and never
   overshoot it. Among those, **bigger cities first** (1M+, 500k+, 250k+ or tourist town, others),
   then the **nearest** (priority 4: distance from the last place).
   Example (tested): **Prague → Vienna → Budapest → Belgrade → Sofia → Plovdiv → Thessaloníki → Athens**.
+- **Hard-to-enter countries are never on the way:** Belarus, Russia, Afghanistan, Turkmenistan,
+  Eritrea, Sudan, South Sudan, Libya and Somalia (visas, closed land borders, war) are never a stop,
+  a sight or a detour — only when the trip itself starts, ends or has a destination there. Vienna →
+  Vilnius never goes through Grodno; Vilnius → Minsk is allowed.
+- **One stop ahead:** on a one-way trip a stop that leads on to another big city counts for more
+  than a bigger one that leaves only small towns before the destination (Vienna → Vilnius in 4 days:
+  Wrocław → Warsaw rather than Prague → Toruń).
+- **Popular places or off the beaten track** (the traveller's choice under *Where to?*, popular by
+  default). *Popular*: the biggest cities as stops and the best-known sights first, as above. *Off
+  the beaten track*: smaller cities (under 500,000) first, then towns, then big cities, metropolises
+  last (Vienna → Vilnius: Brno → Ostrava → Lublin); and the sights ranked with the world-famous ones
+  no higher than 8.5, the crowds' favourites (20,000+ reviews) a point lower and well-loved places
+  few people know (7.5+, under 2,000 reviews) half a point higher. Every stop still needs 4 sights
+  rated 7.0+.
+- **A stop worth a day:** a next stop needs at least **4 sights rated 7.0+**; one the sources know
+  little about (a big city with hardly any sights) is passed over for the next best, twice at most.
+- **Nowhere new to go — exploring around in circles:** when it is time to move on but nothing new
+  is within reach (an island, a remote town), or the trip is back at its end with days to spare, and
+  the place's own sights rated 7.0+ are used up, the planner explores the area around it, one circle
+  at a time, each only when the previous one has nothing good left:
+  1. every sight within **35 km**, or a top sight (**8.5+**) within **50 km**;
+  2. every sight within **50 km**, or a top sight within **85 km**;
+  3. every sight within **85 km**, or a top sight within **100 km**.
+  Circles cross borders where the traveller can go (Vienna → Bratislava in circle 2, Brno in circle
+  3), never into closed or no-entry areas (`CIRCLES` in `src/planner/generator.ts`;
+  `tests/explore.test.ts`).
+- **Must-see places and towns** (the *Must-see* search): a place to visit, or a **town** (*"Add
+  Tbilisi as a stop on the route"*). One more than a day trip (40 km) away from where the trip goes
+  becomes a stop: the route heads there when it moves on, nearest first, and in time to still reach the
+  end of the trip. One that can't be reached in the days available is left out. The search shows
+  *"Nothing found for …"* instead of doing nothing, and looks near the start city first.
+- **Trips within one country stay in it:** when the start and end are in the same country (Haifa →
+  Eilat), every stop and landmark is in that country too — no detour through Amman (two border
+  crossings, and rental cars can't cross). Trips between countries use any open country, and so does
+  a round trip from a country with fewer than three towns on the list (Singapore, Luxembourg).
+  Examples (tested): **two weeks from Vientiane → Vang Vieng → Luang Prabang → Nong Khiaw**, all in
+  Laos (before 12 Oct 2026 it stayed 14 days in Vientiane); **Tbilisi → Gori → Borjomi →
+  Stepantsminda**.
 - **Landmarks on the way:** when a move is 100 km or more, the planner looks at the half-way point for
   a **world-class nature or heritage site** (national park, waterfall, lake, cave, castle, ruins…,
   popularity 9.0+) that is on the way and brings you closer to the destination. If there is one, it
   gets **a day of its own** ("Day 4 – Plitvice Lakes National Park"), with a hotel nearby.
 - The day's title on the plan is **"Day x – Place"**, in dark green.
 
+**Places a trip never goes, and places it warns about** (`src/planner/safety.ts`):
+- **Closed — never planned:** the **Gaza Strip**, **North Korea** and the **Chernobyl exclusion zone**
+  (nobody can enter them as a visitor). They are never a stop, and no sight, event, restaurant or
+  hotel inside them is used. Choosing one as the start or end says *"… is closed to visitors"*.
+- **Countries Israelis can't enter** (Lebanon, Syria, Iran, Iraq, Yemen — no open border with Israel):
+  the route never goes into them and sights across the border are left out (Beaufort Castle is never
+  planned from Metula). A trip you start or end there yourself (Beirut → Byblos) may use that country,
+  with a warning.
+- **Planned with a warning:** Palestinian Authority towns (Area A: Bethlehem, Ramallah, Jericho,
+  Hebron, Nablus…), **Ukraine**, **Crimea** and the other occupied parts of Ukraine. The plan shows a
+  red *"Before you go"* box at the top: which days and places, and what to check.
+- Borders are drawn with a margin away from Israeli towns: Netiv HaAsara, Nahal Oz, Be'eri, Kerem
+  Shalom, Metula, Misgav Am, Majdal Shams, Jerusalem's Har Homa and Gilo get no warning
+  (`tests/safety.test.ts`).
+
 ### 6.3 Where the attractions come from, and popularity (0–10)
 
-Two sources, merged into one list and treated exactly the same way:
+All sources are asked at the same time, merged into one list and treated exactly the same way:
 
-1. **Tripadvisor** (main source): the best places within 8 km (its maximum radius).
-2. **Wikidata** (free backup — no key, no approval, public domain): places of 47 kinds (castles,
+1. **Tripadvisor** (main source): its 20 best-rated places within 8 km (its maximum radius). When its
+   licensed answer is thin, the rest comes from its catalog (§10).
+2. **Google Places** (worldwide, including the countryside and outside Europe): the 20 best-known
+   sights around the town, with Google's rating, **opening hours kept up to date by the places
+   themselves**, a one-line summary and a photo by its author. Needs *Places API (New)* enabled for
+   the server key (`GOOGLE_SERVER_KEY`); without it this source switches itself off for 3 hours and
+   says so in the log. `GOOGLE_PLACES_SIGHTS=off` in `functions/.env` turns it off. Google's terms
+   don't allow storing its content, so nothing from Google is cached on the server; its photo links
+   are short-lived, so a saved trip opened weeks later may show a placeholder for a Google photo.
+3. **Wikidata's map search** (free — no key, no approval, public domain): places of 47 kinds (castles,
    palaces, ruins, museums, churches, national parks, lakes, waterfalls, caves, zoos, theme parks,
    theatres, markets…) within 12 km of a city or 20 km of a landmark, each with its **Wikipedia
-   article** (the "source" link) and a **Wikimedia Commons photo** with author and licence. Live
-   answers are cached 30 days. On top of that, a Europe-wide **backup list of 5,000 attractions**
-   (the best-known in every European country and Israel, a quarter of them nature, spread so that
-   no single city takes all the room) is built once a month — and on demand with
-   `npm run attractions:build` (§2.3).
+   article** (the "source" link) and a **Wikimedia Commons photo** with author and licence.
+4. **OpenStreetMap + Wikidata's API** (free): the sights on the map that link to Wikidata, ranked by
+   how many Wikipedias cover them, with names in English, Hebrew and Russian, the lead photo of
+   their Wikipedia article and **the map's opening hours** when written in a common form. Both free
+   sources are cached 30 days per area.
+5. **Firefly's backup list** of ~10,000 attractions (the best-known in every European country and
+   Israel, a quarter of them nature): on the server, and **on the phone** — bundled with the app
+   (`npm run attractions:build` writes `src/data/attractions-europe.json` before the app is built)
+   and refreshed from Firestore. The server refreshes the list a little every night; the cities
+   already searched are used even before the whole list is done. **When the server doesn't answer
+   at all, the phone's list alone gives the trip its sights.**
+6. **Wikipedia, from the phone** (the last resort): when the server can't answer or finds fewer than
+   10 places, the phone asks Wikipedia itself for articles with coordinates within 10 km, keeps
+   those about places to visit (from each article's short description: museums, parks, churches,
+   ruins, beaches… never neighbourhoods, streets, schools or companies), names them in the trip's
+   language and ranks them by how many people read the article in the last 30 days.
 
-The same place from both sources is merged (closer than ~80 m, or close with a similar name): the
-Tripadvisor record is kept, with Wikidata's photo if Tripadvisor had none. **Bike rentals, bars,
-shops and spas are never planned**; cafés, food tours and tastings only when you chose *Food*.
+The server answers within **50 seconds** with whatever the sources have given by then (a slow
+source is left out of that answer instead of making the whole answer late).
+
+**Quiet areas** (the countryside, small towns, the Negev, most of the world outside Europe): when
+the sources find **fewer than 15 places** around a town, the search widens to **35–40 km**, also takes
+places known to a single Wikipedia, and adds the map's own sights without a Wikipedia article —
+springs, ruins, viewpoints, village museums, nature reserves (popularity 6.0–7.4, by how well the map
+describes them: website, Wikipedia, hours, photo).
+
+Under the trip map, a line says where the plan's sights came from, e.g. *"Sights from: Tripadvisor
+12 · Google Maps 20 · Wikipedia (Wikidata) 40 · OpenStreetMap 30 · Firefly's list 20"*, and
+Tripadvisor's answer if it refused (*"too many requests"* = its per-second limit or the plan's
+quota — check the Terra dashboard). Send a screenshot of that line when a trip looks thin.
+
+**Descriptions.** A planned place whose description is missing or a single line (*"park in Tel
+Aviv"*) gets the **introduction of its Wikipedia article** (about three sentences) in the trip's
+language — found through its own link, its Wikidata item, or nearby articles with its name; in
+English when the trip's language has none and the place has hardly any description. The place's
+page says where the description comes from, with a *"Read the full article"* link. Google's summary
+or Tripadvisor's description is used when it is fuller.
+
+**Opening hours.** Taken from the most reliable source that has them: **Google**, then
+**Tripadvisor**, then **OpenStreetMap**. Each card says where they were checked (*"09:00–17:00 ·
+checked on Google Maps"*); without any, it says *"Opening hours not confirmed — check before you
+go"*, and the planner treats the place as open all day. A place Google lists as closed (permanently
+or temporarily) is never planned.
+
+**When no source has anything** for a place (all failing at once), the trip **stays there** instead
+of driving to the next city, and says so at the top; with events turned off, the trip isn't built
+and the app says *"We couldn't get any sights for … right now"*.
+
+**Tour companies, agencies and guest houses are not attractions.** A listing whose name says it
+sells trips or rooms (*Tours, Travel, Transfers, Guest House, Hostel, Agency, Ltd*…, and the same in
+Hebrew and Russian), whose category is a tour seller or lodging, or whose description is a company
+talking about itself (*"We are a family business…"*) is left out — unless it is an **activity**
+(Jeep, 4×4, ATV, boat, kayak, balloon, horse riding, diving, bike, climbing, hiking…) or a real place
+(*Tours Cathedral* in the French city of Tours stays). Walking, food and private tours sold by
+companies are left out. Restaurants are checked the same way: *"Sofia–Plovdiv transfer"* or a tour
+seller is never offered as a meal, while *"Hotel Aria Restaurant"* stays.
+A company describing itself in Italian, Spanish, Portuguese, French, German, Dutch or Polish
+(*"Siamo un'agenzia…"*, *"Tour guidati in italiano… con guida autorizzata"*, *"Somos una agencia…"*)
+counts the same as in English (*L'altra Israele* is left out); tourist information offices too.
+Hotels are left out too, by Tripadvisor's own categories (Hotel, B&B, Hostel…), by name (*Hotel*,
+*Apartments*, *Inn* / *Lodge* / *Resort* unless the place is plainly a sight, Chinese 酒店 / 宾馆 /
+客栈, and chains like Radisson, Hilton, Ibis), by Tripadvisor's hotel wording (*"Finding an ideal
+motel in … does not have to be difficult"*, *"a nice option for travelers like you"*) and by description (*"your home away from
+home"*); so are private guides (*"Dr … – Krakow Tour Guide"*, *"licensed guide"*). Kraków's *Hotel
+Wentzl* is neither an attraction nor lunch.
+
+**Places for a meal are never sights; cafés and sweets only with *Food*.** A lunchroom, bistro,
+brasserie or restaurant — also one that says *"breakfast, lunch…"* or *"…is an atmospheric and cozy
+lunchroom"* — is a meal (planned as lunch or dinner), never a sight, Food or not (Enschede's *De
+Branderie*, *Frank & Charlie*). A place **centred on coffee and sweets** — café, coffee shop or
+roastery, patisserie, bakery, ice-cream parlour, chocolatier, tea house (by its kind, its name, also
+Dutch/German compounds like *Koffiegeschenk*, or its description) — is a sight **only when you chose
+*Food***, and with *Food* the server also asks Google for them. Food markets, food halls, wineries,
+breweries and tastings stay sights; so does a tower with a restaurant.
+
+**The four new trip types** — *Shopping*, *Beaches*, *Extreme sports*, *Night clubs*. When you choose
+one, each town is also searched for its places on Google (shopping malls, markets, department stores;
+beaches; adventure parks, ski resorts, karting, paintball, off-road; night clubs) and Tripadvisor's
+matching categories count for it.
+- **Shopping:** malls and markets become sights (otherwise shops are never planned).
+- **Beaches / Extreme sports:** beaches and adventure places rank higher (they fit a chosen type).
+- **Night clubs:** a club is **never a daytime visit**. Each evening (not on a family trip, not on the
+  way-home day) the best-rated club within 10 km of tonight's hotel becomes a **night out** after the
+  day's last stop: from **22:00** at the earliest, about 2½ hours (1½ when it closes sooner), over by
+  **01:00**, and only when it is open then. The day's end time stretches to cover it.
+- To test: Tel Aviv, 3 days, *History* + *Night clubs* → each evening but the last ends with a club
+  from 22:00; the same trip without *Night clubs* (or with a child) has none. Amsterdam with
+  *Shopping* → a market or a mall; without it, none. Enschede with *Food* → a café or ice-cream
+  parlour may be a sight; without *Food*, never.
+
+**Transfers are never attractions** — anything with *transfer* in its name (*"TransferAirport24"*),
+airport shuttles and taxis.
+
+**Descriptions belong to the place.** A club, karaoke bar, restaurant, café or shop gets no
+Wikipedia text found near it (*Karafun Bruxelles* got the Manstein plan, *Carmen's Corner* the
+Stock-im-Eisen): only its own description, or an article linked to it directly. For sights, an
+article found nearby is used only when its title matches the name, or — for a name in another
+alphabet than that Wikipedia's — when it is right on the spot. Two different things in one building
+are never merged: places within 80 m are the same only with names in different alphabets (*Western
+Wall* / *הכותל המערבי*), a word in common, or the same kind of sight (*St. Stephen's Cathedral* /
+*Stephansdom*). Karaoke bars are nightlife (planned only with *Night clubs*, as a night out).
+
+**People are not attractions.** On the map a tomb or statue is sometimes linked to the *person's*
+Wikidata item, which made a sight out of *"Abdallah of Morocco — Sultan of Morocco…"*. Items that
+Wikidata says are people, families or dynasties, and descriptions that read like a person
+(*"Moroccan Sufi saint"*, *"French painter (1840–1926)"*), are left out; *"tomb of a Talmudic sage"*
+stays. The same goes for **events** that Wikipedia places on the map (*"2010 Mount Carmel forest
+fire"*, *"Battle of Haifa"*): articles about something that happened are left out, while *"War
+memorial in Haifa"* and *"site of a 1967 battle"* stay.
+
+**Wikipedia as a source.** Every town is also searched in Wikipedia's articles with coordinates
+(10 km), keeping only places to visit (museums, parks, mausoleums, conservation areas, cultural
+centres…; never people, companies, schools or districts), ranked by readers in the last 30 days.
+This fills in where Wikidata's classes and the map know little — West and East Africa, much of Asia.
+The *"couldn't get any sights"* dialog now shows *Wikipedia N* for both the server's and the
+phone's search.
+
+**Speed.** The server answers for a town as soon as the sources that answered give it 25 places
+(usually Tripadvisor, Google and the backup list, within 12 seconds), instead of waiting for the
+slower free searches; a quiet town still waits for them, up to 50 seconds. On a one-way trip the
+destination's sights are fetched while the first city is planned, and events, restaurants and
+hotels are fetched at the same time.
+
+The same place from several sources is merged (the same Wikidata item; or closer than ~80 m, or close
+with a similar name): the record of the first source (Tripadvisor, then Google, then the free ones) is
+kept, completed with a photo if it had none, the fuller description, the best-checked hours, and the
+higher popularity. **Bike rentals, bars and
+spas are never planned**; shops only with *Shopping*, clubs only with *Night clubs* (as a night out),
+cafés and sweets only with *Food*.
 
 **Popularity (0–10)** — the "rating" in every rule above:
 - Tripadvisor: the rating × 2, pulled towards 7.0 when there are few reviews
@@ -619,13 +935,26 @@ shops and spas are never planned**; cafés, food tours and tastings only when yo
   a café with ten 5★ reviews = 7.5, so a handful of glowing reviews never beats a landmark.
 - Wikidata: from how many Wikipedia language editions cover the place:
   `5 + 2.2 × log10(editions + 1)`. ~65 editions (Plitvice, Charles Bridge) ≈ 9.0; ~7 editions ≈ 7.0.
-- When both sources know the place, the higher of the two.
+- Google: like Tripadvisor (its rating and number of reviews).
+- Map sights without a Wikipedia article (quiet areas only): 6.0–7.4.
+- When several sources know the place, the highest.
 
-**Tripadvisor's rate limit.** Tripadvisor allows a number of requests per second and per day that
-depends on your Terra plan (dashboard → *Manage Plan*). The server spaces its requests to
-`TRIPADVISOR_QPS` (in `functions/.env`, default 3) and, after a *429 Too Many Requests*, pauses
-Tripadvisor for 90 seconds and uses Wikidata (attractions) and OpenStreetMap (restaurants) in the
-meantime. The plan then says so at the top ("Tripadvisor was busy…").
+**Tripadvisor's rate limits.** Terra has two:
+- **Searches** — `/locations/nearby`, `/locations/search` and their `/catalog/…` versions — share
+  **one bucket of 1 request per second (burst 5) for the whole key, on every plan**. Requests over it
+  are refused with *429* and **don't show in the Terra dashboard**. Attractions, restaurants and
+  hotels run on separate servers, so their searches take turns through one schedule kept in
+  Firestore (`rateLimits/terraSearch`, `functions/src/terraLimiter.ts`): at most 4 at once after a
+  quiet spell, then one every 1.1 s. A search that would wait more than 30 s answers "busy" and the
+  other sources plan the trip. After a 429 every server holds back (Tripadvisor's *Retry-After*,
+  else 2 s, then 4 s) before trying again.
+- **Everything else** (details, photos, reviews, allowlist): your plan's limit (Discover: 10 a
+  second, 10,000 a day), kept per server with `TRIPADVISOR_QPS` (default 3).
+
+Per city, Tripadvisor costs **one search** once the area is licensed (its 20 best-rated places, one
+page), three the first time (search → catalog → add to the allowlist → search). An area is remembered
+as licensed only when its places really were added to the allowlist. `firebase functions:log --only
+attractionsNear` shows, per city, how many places each source gave and Tripadvisor's HTTP answers.
 
 **Filters:**
 - On a **family trip** (kids > 0) or with **"Kid-friendly places only"**, adults-only places are
@@ -636,13 +965,43 @@ Visit lengths: Tripadvisor's recommended length when it has one; otherwise by ki
 (theme park 240 min, national park 240, zoo 180, museum / castle 120, park / garden 75, church 40–45,
 bridge / square / viewpoint 30–40, anything else 60–90).
 
-**Events.** Only when "Add local events & festivals" is on: the live event search (§5) around each
-place, **within 40 km**, for the trip dates. On family or kid-friendly trips, only events typed
-*Kid Friendly* or *Family*.
+**Events.** Only when "Add local events & festivals" is on: the live event search (§5, including the
+events admins upload) and the events that ship with the app, around each place **within 40 km**, for
+the trip dates. On a **family trip**, adults-only events are left out (18+, nightclubs, raves, pub
+crawls…); with **"Kid-friendly places only"**, only events typed *Kid Friendly* or *Family* remain.
 
 **Restaurants.** Tripadvisor within 5 km (never its lighter "catalog" listings, which can't tell a
 restaurant from a bike rental); when Tripadvisor is busy or finds too few, **OpenStreetMap** cafés and
-restaurants within 3 km (free, no key; each links to its own website or its map page).
+restaurants within 3 km (free, no key; each links to its own website or its map page). Places listed as restaurants that aren't somewhere to eat a meal (beer spas, brewing schools,
+pub crawls, hookah lounges…) are left out.
+
+**Events are mixed in with the sights.** Each day gets its share of the best events around:
+**1** where the town still has 6 or more good sights (popularity 7.5+), **2** with 3–5, **3** with 1–2
+and up to **4** on a day with none — so towns without many sights get more events. The day's events
+are chosen by how well they fit your interests (and children, on a family trip), then those with a
+photo and a description, nearer ones, and shows in the evening rather than mid-day. Only events that
+fit your day's hours are chosen (a concert at 22:00 isn't, when your day ends at 21:00), at most two
+timed shows a day and never two less than 30 minutes apart. A chosen drop-in event (a fair, an open
+day) is fitted into the day like a top sight; a couple of others may fill time no sight can use.
+Events you picked yourself (*Must-do*) are always kept.
+
+**Take me anywhere** (under the start city): with your dates chosen, Firefly looks at every event
+it knows (the weekly list of §5.2, the hand-checked events, admins' uploads, and **Ticketmaster's
+events within 1,500 km** — the `eventsAround` function, cached 6 hours) and suggests up to six
+places **within 1,500 km of your starting city** (or of where the phone is, when no starting city
+is chosen — on the emulator that is California unless you set a location) with the most events on
+those dates. Towns with 3+ events first; if none has that many, the towns with any. When nothing is
+found, the message says from where and how many events were checked. Events count
+for the big city or famous town they are within 60 km of; festivals, family and outdoor events,
+events that fit your interests and hand-checked ones count a little more, and further places a
+little less. Your own town (within 40 km), closed areas and countries you can't enter are never
+suggested. Tap one to make it the trip's city (events are turned on).
+
+**Start and end places** are picked from suggestions as you type, in Hebrew, Russian or English (big
+cities appear at once; other places from Google — press search on the keyboard for more from
+OpenStreetMap). A picked place is used exactly; a typed one is looked up. *On the emulator*, to type
+Hebrew: Settings → System → Languages & input → On-screen keyboard → Gboard → Languages → Add
+keyboard → Hebrew, then switch with the globe key.
 
 **Hotels.** A hotel for **every night except the last** (the last night is at home). Consecutive
 nights in the same place form one **stay**, with **one** hotel search covering all its nights. Sources
@@ -669,8 +1028,9 @@ in that order as long as they fit (opening hours, meals, fixed-time events, the 
 most 6 places — fewer with accessibility pacing). A place that would mean waiting more than 75 minutes
 for it to open is taken only when nothing else fits.
 
-**Events** that can be visited any time during their opening hours ("drop-in") rank like a **9.0**
-attraction (+ type matches): real local events are what Firefly is about. How an event's time is read:
+**Events** chosen for the day (§6.3) that can be visited any time during their opening hours
+("drop-in") rank like a **9.5** attraction (+ type matches), so they are fitted in among the day's
+best sights; timed ones are fixed in the timetable. How an event's time is read:
 
 | The event publishes | Treated as |
 |---|---|
@@ -678,6 +1038,14 @@ attraction (+ type matches): real local events are what Firefly is about. How an
 | start and end, more than 4 hours apart (a festival day, a market) | **drop-in**: a 2-hour visit anywhere inside those hours |
 | only a start time | **fixed**: 2 hours from the start |
 | no times | **drop-in**: a 90-minute visit any time in your day |
+
+**Day tickets are long visits.** A ticket to a **theme park, film park or water park** (*"Filmpark
+Babelsberg – Tagesticket"*, Europa-Park, Movie Park, Disneyland, Legoland…) is a **5-hour** drop-in;
+a **zoo, safari park or aquarium** 3 hours; any other *day ticket / Tagesticket / day pass* 4 hours.
+Without times they are planned within the usual opening hours (parks from 10:00, zoos from 09:00,
+until 18:00); with a start time the visit starts then; published opening hours ("09:00–18:00") are a
+window to visit in, never a 9-hour show. Lunch is eaten there (parks and zoos have food). A concert
+or a show keeps its own time.
 
 ### 6.5 Building one day, hour by hour
 
@@ -703,8 +1071,23 @@ night's hotel on later days. Then this loop repeats:
    - would leave **no room for the next meal**. Before lunch, a visit must end by 13:30; before
      dinner, by 19:45. In both cases it must also end early enough to travel to the closest
      restaurant and finish eating before your day ends. *Exception:* a visit of **3 hours or more**
-     that is under way at mealtime (a zoo, a theme park) may run through it, and the meal is **eaten
-     on site**. The card shows "Lunch on site".
+     that is under way at mealtime may run through it, and the meal is **eaten on site** — but only
+     where there is food: theme parks, zoos, aquariums, and places whose description mentions a
+     restaurant or café (*"the museum has a café"*). A long museum visit without one is planned
+     before or after a restaurant lunch instead. The card shows "Lunch on site".
+
+   **Restaurants come from Google Maps.** Each town's restaurants are Google Maps' own: only
+   places whose main type on Google Maps is a restaurant (*restaurant*, *italian_restaurant*,
+   *bistro*…), the best-known first (within 4 km), then the nearest when more are needed. A hotel,
+   tour operator, chauffeur or shop that also serves food is never one. Tripadvisor's restaurant
+   search is used **only when Google can't be asked** (no key, refused, down), and then only for
+   places Tripadvisor itself files as restaurants — a restaurant page (*Restaurant_Review*), never a
+   "things to do" page (*"#3 of 250 things to do in Vienna"*), a tour or a hotel — with
+   OpenStreetMap filling in. Name filters apply on top (tours, transfers, museums, hotels and
+   aparthotels are never a meal). Each restaurant appears once in a town's list (the same name
+   within 200 m is the same restaurant), so lunch and dinner on one day are always two different
+   restaurants. A place on the town's restaurant list is never also planned as a sight
+   (*Carmen's Corner* was lunch and then a 90-minute visit).
 
    Among what is left, it takes the **first in the greedy order of §6.4**: must-see places first,
    then places you can start without waiting more than 75 minutes for them to open, then by
@@ -828,7 +1211,11 @@ When kids > 0, the plan has a pink **Kids' plan** tab. For each place:
 | Why did the trip leave a city after one day? | No place rated 9.0+ was left, and no 7.0+ place that fits your chosen types / ages / needs (§6.2). Choosing types keeps you longer in cities rich in them. |
 | Why only 4 days in a city? | The 4-day limit (§6.2); world cities like Paris or London are exempt. |
 | Why a day at a national park between two cities? | A world-class landmark (9.0+) on the way gets its own day (§6.2). |
-| Why does a place link to Wikipedia instead of Tripadvisor? | It came from Wikidata, the free backup source (§6.3). Its photo credit names the author and licence. |
+| Why does a place link to Wikipedia (or Google Maps, or the map) instead of Tripadvisor? | It came from Wikidata, Google Places or OpenStreetMap (§6.3). Its photo credit names the author and licence. |
+| Why so many events today? | The town had few good sights left (popularity 7.5+), so the day took more events: 1 with 6+ good sights, up to 4 with none (§6.3). |
+| Why no events at all? | Events are off, none in the search within 40 km for that date, none fit your day's hours (a 22:00 show when your day ends at 21:00), or, on a family trip, they were adults-only. |
+| Why a red "Before you go" box? | A day or place is in a Palestinian Authority town, Ukraine, Crimea, or a country Israelis can't enter that you chose yourself (§6.2). |
+| Why "Opening hours not confirmed"? | No source (Google, Tripadvisor, OpenStreetMap) published them; the planner assumes it's open all day. Check the place's site. |
 | Why a long gap in the afternoon? | Nothing left fits before dinner: places close, are too long, or were already visited. The gap is free time. |
 | Why this restaurant? | It was the closest open restaurant at that moment. Restaurants repeat only when a town's list runs out. |
 | Why no dinner? | Your day ends before 19:45, or no offered restaurant was open and reachable in time. |
@@ -993,6 +1380,33 @@ sender uses Russian.
       page, and after logging in you return to where you were. A guest sees the log-in page again
       the next time the app starts.
 - [ ] Profile → *Log out* → back to the log-in page.
+- [ ] Hearts are saved on the phone first and shown at once; if the server can't take one, the
+      message *"Saved on this phone; it goes to your profile as soon as the server takes it (code)"*
+      appears once and it is sent again later (`src/services/localLists.ts`). Liked events are also
+      kept on the phone, so the profile shows them even when the server copy failed.
+- [ ] Heart an event (Events tab), a camp and a place on a trip, and *Save* a trip → each appears on
+      the profile (liked events stay there after they leave the search results: a copy is kept in
+      `savedEvents`). If anything fails, the message ends with a code in brackets, e.g.
+      *"Something went wrong (permission-denied)"* — `permission-denied` means the Firestore rules
+      on the server are old: `firebase.cmd deploy --only firestore:rules,storage`.
+- [ ] Saving a trip with opening hours works (Firestore can't store lists inside lists; trips are
+      saved in a form it accepts and read back the same — `src/services/firestoreSafe.ts`).
+- [ ] Heart a place on a trip (from any source — Tripadvisor, Google, Wikipedia…) → it is on the
+      profile under favourite places and opens from there (a copy is kept on the phone; Tripadvisor
+      places hearted on another phone are looked up by their id).
+- [ ] Each day's map opens on **that day's** sights and hotel (not on where the day starts — on a
+      travel day that is the last city), and switching days moves the map — also deep into a long
+      trip (Köln round trip, day 10 in Berlin: the map shows Berlin, not Cologne).
+- [ ] *I'm going* on an event (open the card) turns on at once ("Added to your profile: I'm going")
+      and the event appears under the profile's events you're going to — saved on the phone first,
+      like a heart; the server then keeps a copy and tells your friends.
+- [ ] The profile page shows the photo with a **camera badge** and *Change photo*: tap either →
+      choose a photo → it shows at once, uploads and is saved (the same on Edit profile).
+- [ ] Edit profile → tap the photo → choose one → it uploads and is saved at once (no crop step);
+      photos over 10 MB are refused with a message. Needs Storage switched on in the Firebase
+      console and the storage rules deployed.
+- [ ] A profile made by an older version of the app (missing lists) opens normally; an account
+      with no profile at all (made in the Firebase console) gets one a few seconds after logging in.
 - [ ] Every screen opened from a list has a back arrow (it points right in Hebrew).
 
 **Languages and RTL**
@@ -1027,9 +1441,30 @@ favourite an event; *I'm going*.
 - [ ] Events: search and filters come first, the map below them; event cards fold out.
 
 **Trip planner — accessibility**
+
+Where the confirmations come from (each with a link the traveller can open): an organisation's
+record (`npm run accessibility`), **Google Maps** (*"Wheelchair-accessible entrance, toilet"* —
+wheelchair users only; a toilet or parking alone doesn't count; no extra cost, it comes with the
+website field already asked for), **OpenStreetMap's tags** on the place (`wheelchair=yes`,
+`tactile_paving=yes`, `blind:description`, `hearing_loop=yes`, `sensory_friendly=yes`… shown as
+*"OpenStreetMap (map data)"*), and the **venue's own website** (its accessibility pages, read in
+English, Hebrew, Russian, Arabic, French, German, Dutch, Italian, Spanish, Portuguese, Polish, Czech,
+Turkish and Japanese). Statements about the *website* (screen readers, Israel's "הצהרת נגישות",
+"версия для слабовидящих") and negated ones ("not wheelchair accessible") never count. The checks
+take at most ~35 seconds per town (whatever isn't checked by then stays "not confirmed"), and a site
+that couldn't be read is tried again next time instead of being remembered as "nothing".
+
+*Only places confirmed for these needs* is **off by default**: confirmed places come first and
+every place says what is and isn't confirmed. Few venues publish this information (in Morocco
+hardly any), so when the option is on and nothing on the route is confirmed, the app asks
+*"No confirmed places here — Plan anyway?"* instead of ending with an error; *Plan anyway* reuses
+the places already found.
+
 - [ ] With no need chosen, the trip is exactly as before (no accessibility checks, usual pace).
+- [ ] Marrakesh, *Blind or low vision* + *Autism*, *Only places confirmed* on → the "No confirmed
+      places here" question; *Plan anyway* gives a plan where each place says "Not confirmed…".
 - [ ] Choose *Blind or low vision* with *Only places confirmed* on: only places whose own site (or
-      an organisation record) mentions provisions for blind visitors are used; each shows
+      an organisation record, or the map) mentions provisions for blind visitors are used; each shows
       "Confirmed: Blind or low vision". Choose *Autism* instead: a different set (sensory-friendly
       evidence), never the blind-only places.
 - [ ] *Only places confirmed* off: confirmed places come first; others say "Not confirmed … check with
@@ -1083,6 +1518,19 @@ loading *My trips* after the app restarts, need the internet.
   So roughly $0.50–1.20 per planned trip once the free 1,000 are used. Set a daily budget in the
   Terra dashboard (*Manage plan*). To spend less, lower `ATTRACTIONS_PER_DAY` /
   `RESTAURANTS_PER_DAY` in `generator.ts`.
+- **Google Places (Nearby Search, New).** One request per town of a trip (two in a quiet area), and
+  one photo request for each Google place the trip uses that has no other photo (at most 8 per
+  town). Asking for opening hours and summaries makes it the *Enterprise + Atmosphere* SKU: a monthly
+  free allowance, then roughly $40 per 1,000 requests; photos about $7 per 1,000. A trip of a few
+  towns costs a few cents. A town planned again within 15 minutes is answered from memory. Turn it
+  off with `GOOGLE_PLACES_SIGHTS=off` in `functions/.env`; set a quota in Google Cloud → APIs →
+  Places API (New) → Quotas.
+- **Google Places for restaurants.** One or two Nearby Searches per town of a trip (the best-known
+  restaurants, and the nearest when a long stay needs more than 20; answered from memory when the
+  same town is asked again within 15 minutes), plus one per extra trip type that asks for its own
+  places (Shopping, Beaches, Extreme sports, Night clubs, Food). Restaurants use Google even with
+  `GOOGLE_PLACES_SIGHTS=off`. Tripadvisor is no longer asked for restaurants while Google answers,
+  which saves its quota.
 - **SerpApi (Free plan: 250 searches a month, renewing on the 9th).** Searches are spent on:
   - each live event search: 2 per area, dates and language, cached 6 hours;
   - each hotel stay priced through Google Hotels: 1, cached 1 day;
@@ -1109,13 +1557,18 @@ Check current prices and quotas on each provider's site; they change.
 | Symptom | Fix |
 |---|---|
 | `UNAUTHENTICATED` | Token missing or older than 1 hour: run the `TOKEN=` line again |
+| Function log: *"The request was not authorized to invoke this service. The access token could not be verified"*; in the app *"server: unauthenticated"* | That function's Cloud Run service isn't public, so Google refuses the app's calls before Firefly's code runs. Firebase makes callable functions public only when it first creates them, so delete it and deploy it again: `firebase.cmd functions:delete attractionsNear --region europe-west1 --force`, then `firebase.cmd deploy --only functions:attractionsNear` (use the function's name from the log). Watch the deploy output for a warning about the *invoker* / *IAM policy*: that means your Google organization blocks public services (IAM & Admin → **Organization policies** → *Domain restricted sharing* → override for this project → *Allow all*, needs an organization policy administrator). Which functions are affected: `firebase.cmd functions:log -n 500 \| Select-String "not authorized"`. |
 | `PERMISSION_DENIED` from `refreshFallbackNow` | Run `set-admin`, then sign in again to get a token with the claim |
 | `INTERNAL` from a function | Look at the emulator terminal or `firebase functions:log`; usually a missing secret |
-| A trip has only events and lunches, no attractions; `functions:log` shows `429 … Rate Limit was exceeded` | Tripadvisor's per-second or daily limit was reached. The server now spaces requests (`TRIPADVISOR_QPS` in `functions/.env` — set it to your Terra plan's QPS) and falls back to Wikidata and OpenStreetMap; run `npm run attractions:build` once so the backup list is complete. Check the daily limit in the Terra dashboard → *Manage Plan*. |
+| A whole country has no sights (seen in Nigeria, Ghana, Tanzania before 12 Oct 2026) | The *"couldn't get any sights"* dialog lists what each source returned — send it. `firebase.cmd functions:log --only attractionsNear -n 50` shows the same per town (`tripadvisor`, `google`, `wikidata`, `osm`, `wikipedia`, `ms`). All zero with `server: deadline-exceeded` = the server answered too late (fixed: it now always answers within ~60 s, ~100 s with accessibility checks). `google 0` everywhere = *Places API (New)* isn't enabled for the key. Wikipedia is now a source on the server too, which covers Africa and Asia better than Wikidata's classes. |
+| Tripadvisor gives no attractions (*"Sights from"* has no Tripadvisor count), although the Terra dashboard shows few requests and no errors | Refused searches (429) don't appear on the dashboard. Before 12 Oct 2026 Firefly sent up to 3 searches a second from each server, over Terra's **1 search a second** limit, so most were refused and areas never reached the allowlist; fixed by the shared schedule (§6.3) — redeploy the functions. Check: `firebase functions:log --only attractionsNear` shows `tripadvisorHttp` per town (only 200s now) and *"Tripadvisor allowlist updated"* the first time a town is planned. `node scripts/testTripadvisor.mjs` (key from `functions/.secret.local`) tests every endpoint, spacing its searches 1.1 s apart; don't run it while the app is planning a trip. If 429s remain: Terra dashboard → *Manage Plan* → daily quota. |
+| Google Places gives nothing (*"Sights from"* has no Google count) | The log says *"Google Places refused"*: enable **Places API (New)** for the project, and if the server key has API restrictions, add *Places API (New)* to them. Billing must be on. |
+| *"We couldn't get any sights for …"* | The message now ends with what each source gave, e.g. *"server: unauthenticated · Tripadvisor 0 · Google 0 · Wikidata 0 · OSM 0 · list 0 · Wikipedia 0"*. **server: unauthenticated** — the app isn't signed in to Firebase: Authentication → Sign-in method → enable **Anonymous**, then reopen the app. **server: deadline-exceeded / internal / unavailable** — the function failed: `firebase.cmd functions:log --only attractionsNear`. **Everything 0, no server error, Wikipedia 0 too** — the phone has no internet (open Chrome on it). |
+| A trip has only events and meals, no attractions | Look at the *"Sights from: …"* line under the trip map (§6.3). Tripadvisor *"too many requests"*: its per-second limit (`TRIPADVISOR_QPS` in `functions/.env` = your Terra plan's QPS) or the plan's quota (Terra dashboard → *Manage Plan*). *"The server didn't answer"*: redeploy the functions (`firebase deploy --only functions`). Nothing from any source: run `npm run attractions:build` (safe to stop and rerun), then rebuild the app — its copy of the list then gives every trip sights even offline. `firebase functions:log --only attractionsNear` shows each city's counts per source. |
 | Events "near me" are in California | That's the emulator's default location (§5.3). Set the emulator's location, or pick *Israel this week*. |
 | Tripadvisor 401 | Wrong or regenerated key: copy it again from the Terra dashboard (Overview → My API key) into `functions/.secret.local`, then `npm run push-secrets` |
 | Tripadvisor 403 "API Key does not have access to endpoint" | Your Terra package doesn't include that endpoint (Manage plan). Firefly falls back to Terra's catalog data (no opening hours or categories). |
-| Tripadvisor 429 | Daily budget or rate limit reached (Discover: 10 requests/second, 10,000 calls/day) |
+| Tripadvisor 429 | Searches over 1 a second for the key (all servers together), or the daily quota (Discover: 10,000 calls a day; the window starts with the day's first call). Firefly waits its turn and backs off; `rateLimits/terraSearch` in Firestore holds the shared schedule. |
 | No attractions in a town | Look in the function log for `Tripadvisor allowlist updated`. If it's missing, adding places to the allowlist failed. |
 | Kids' texts are plain Wikipedia | The Anthropic account has no credit (`npm run check:apis -- --only anthropic` shows "credit balance is too low") |
 | No live Google events, `google-events:skipped-monthly-budget` | The month's SerpApi searches are reserved for the weekly job; they renew on the 9th, or upgrade the plan |

@@ -15,16 +15,18 @@ import {
 } from './wikidata';
 
 /**
- * Builds the Europe-wide backup list of ~5,000 attractions from Wikidata, spread out so big cities
+ * Builds the Europe-wide backup list of ~10,000 attractions from Wikidata, spread out so big cities
  * don't take all the room, a quarter of them nature. Every entry keeps its Wikidata id, Wikipedia
  * article and photo credit, so it can be checked.
  *
- * Two kinds of searches:
+ * Three kinds of searches:
  *  - around every city of 150,000+ people (and the famous tourist towns): Wikidata's map search,
- *    every kind of place (8 km in the 100 biggest cities, which are packed with mapped places;
- *    12 km elsewhere);
- *  - per country, only the rarer nature kinds (national parks, waterfalls, caves, canyons,
- *    beaches, viewpoints, nature reserves) for the places far from any city.
+ *    every kind of place — the 150 best-known within 8 km in the 100 biggest cities (Prague, Paris…,
+ *    packed with mapped places), the 100 best-known within 12 km elsewhere;
+ *  - per country, the rarer nature kinds (national parks, waterfalls, caves, canyons, beaches,
+ *    viewpoints, nature reserves) for the places far from any city;
+ *  - per country, the well-known heritage outside the cities (castles, palaces, fortresses, ruins,
+ *    monasteries, old towns, zoos, theme parks): Karlštejn near Prague, Versailles near Paris.
  *
  * Every answer is saved as soon as it arrives (Firestore `attractionSearches`), so the build can be
  * stopped at any time and the next run carries on where it stopped: it only runs the searches that
@@ -46,10 +48,37 @@ export const COUNTRIES: Array<[string, string]> = [
 /** Countries with so much nature that they get a longer list. */
 const LARGE = new Set(['FR', 'IT', 'DE', 'ES', 'GB', 'GR', 'TR', 'PL', 'AT', 'CH', 'NO', 'SE', 'FI', 'IS', 'HR', 'RO', 'PT', 'IE', 'IL']);
 
+const pick = (kinds: string[]) => WIKIDATA_CLASSES.filter(([, k]) => kinds.includes(k)).map(([q]) => q);
+
 /** Nature kinds searched country by country (rare enough to be quick; lakes and parks are not). */
 export function natureClassGroups(): string[][] {
-  const pick = (kinds: string[]) => WIKIDATA_CLASSES.filter(([, k]) => kinds.includes(k)).map(([q]) => q);
   return [pick(['nationalpark', 'waterfall', 'cave', 'canyon', 'beach', 'viewpoint']), pick(['reserve'])];
+}
+
+/**
+ * Heritage searched country by country, for the famous places outside the cities. Only kinds that
+ * are rare enough to be quick: not churches or museums (hundreds of thousands, and mostly in towns
+ * the city searches already cover).
+ */
+export function heritageClasses(): string[] {
+  return pick(['castle', 'palace', 'fortress', 'ruins', 'monastery', 'oldtown', 'zoo', 'themepark']);
+}
+
+/** One country search: the classes, how well known (Wikipedias) at least, and how many. */
+interface CountryGroup {
+  id: string;
+  classes: string[];
+  minSitelinks: number;
+  limitLarge: number;
+  limitSmall: number;
+}
+export function countryGroups(): CountryGroup[] {
+  const [nature, reserves] = natureClassGroups();
+  return [
+    { id: '0', classes: nature, minSitelinks: 6, limitLarge: 200, limitSmall: 60 },
+    { id: '1', classes: reserves, minSitelinks: 6, limitLarge: 200, limitSmall: 60 },
+    { id: 'heritage', classes: heritageClasses(), minSitelinks: 12, limitLarge: 250, limitSmall: 80 },
+  ];
 }
 
 /** The biggest cities (the list is sorted by population) get a smaller circle: they are packed. */
@@ -62,7 +91,7 @@ export const SEARCH_MAX_AGE_MS = 30 * 24 * 3600_000;
 const GIVE_UP_AFTER = 6;
 
 /** Bump when the searches change, so old answers are not mixed with new ones. */
-const SEARCH_VERSION = 'v2';
+const SEARCH_VERSION = 'v3'; // v3: 10,000-place list (deeper city searches, heritage per country)
 
 export interface CachedPlace extends WdPlace {
   credit?: PhotoCredit;
@@ -129,29 +158,34 @@ interface Search {
 
 const at2 = (n: number) => n.toFixed(2);
 
+/** Where one city's saved answer is kept (attractionSearches/{key}). */
+export const citySearchKey = (cc: string, lat: number, lon: number) => `${SEARCH_VERSION}-city-${cc}-${at2(lat)}_${at2(lon)}`;
+
 /** Every search the list is built from, biggest cities first. */
 export function plannedSearches(cities: Array<[string, string, number, number]> = EUROPE_CITIES): Search[] {
   const list: Search[] = cities.map(([name, cc, lat, lon], i) => {
-    const r = i < BIG_CITY_RANK ? 8 : 12;
+    const big = i < BIG_CITY_RANK;
+    const r = big ? 8 : 12;
+    const n = big ? 150 : 100;
     return {
-      key: `${SEARCH_VERSION}-city-${cc}-${at2(lat)}_${at2(lon)}`,
+      key: citySearchKey(cc, lat, lon),
       label: name,
-      queries: [aroundQuery(lat, lon, r, 'en', 80, 5), aroundQuery(lat, lon, r / 2, 'en', 50, 12), aroundQuery(lat, lon, r / 4, 'en', 30, 25)],
+      queries: [aroundQuery(lat, lon, r, 'en', n, 5), aroundQuery(lat, lon, r / 2, 'en', Math.round(n * 0.6), 12), aroundQuery(lat, lon, r / 4, 'en', 40, 25)],
       country: cc,
       forceCountry: false,
     };
   });
   for (const [cc, qid] of COUNTRIES) {
-    natureClassGroups().forEach((classes, g) => {
-      const limit = LARGE.has(cc) ? 120 : 40;
+    for (const g of countryGroups()) {
+      const limit = LARGE.has(cc) ? g.limitLarge : g.limitSmall;
       list.push({
-        key: `${SEARCH_VERSION}-nature-${cc}-${g}`,
-        label: `${cc} nature`,
-        queries: [countryQuery(qid, classes, 6, limit), countryQuery(qid, classes, 15, limit)],
+        key: `${SEARCH_VERSION}-${g.id === 'heritage' ? 'heritage' : 'nature'}-${cc}${g.id === 'heritage' ? '' : `-${g.id}`}`,
+        label: `${cc} ${g.id === 'heritage' ? 'heritage' : 'nature'}`,
+        queries: [countryQuery(qid, g.classes, g.minSitelinks, limit), countryQuery(qid, g.classes, g.minSitelinks * 2.5, limit)],
         country: cc,
         forceCountry: true,
       });
-    });
+    }
   }
   return list;
 }
@@ -317,7 +351,7 @@ async function ask(deps: BuildDeps, pause: (ms: number) => Promise<void>, label:
   return null;
 }
 
-/** Firestore layout: attractionCache/meta + attractionCache/part-N (400 places each, well under 1 MiB). */
+/** Firestore layout: attractionCache/meta + attractionCache/part-N (400 places each, well under 1 MiB; 25 parts for 10,000). */
 export const CACHE_PART = 400;
 
 export function cacheDocs(

@@ -42,8 +42,16 @@ export interface AttractionJSON {
   weeklyHours?: WeeklyHours;
   rating?: number;
   numReviews?: number;
-  /** Where the place comes from: Tripadvisor (main source) or Wikidata (free backup). */
+  /** Where the place comes from: Tripadvisor (main source), Google Places, Wikidata or OpenStreetMap. */
   provider: AttractionProvider;
+  /** Who wrote `description` (default: the provider). */
+  descriptionSource?: DescriptionSource;
+  /** The page the description comes from (a Wikipedia article), when not the place's own link. */
+  descriptionUrl?: string;
+  /** Where the opening hours were checked; none = not confirmed. */
+  hoursSource?: HoursSource;
+  /** Whose rating `rating` is, when not the provider's (a Wikidata place rated on Google). */
+  ratingSource?: 'tripadvisor' | 'google';
   category?: string;
   suggestedMinutes?: number;
   address?: string;
@@ -60,11 +68,17 @@ export interface AttractionJSON {
   wikidataId?: string;
 }
 
-export type AttractionProvider = 'tripadvisor' | 'wikidata';
+export type AttractionProvider = 'tripadvisor' | 'google' | 'wikidata' | 'openstreetmap';
+export type DescriptionSource = AttractionProvider | 'wikipedia';
+export type HoursSource = 'google' | 'tripadvisor' | 'openstreetmap';
+const PROVIDERS: readonly AttractionProvider[] = ['tripadvisor', 'google', 'wikidata', 'openstreetmap'];
+const isProvider = (x: unknown): x is AttractionProvider => PROVIDERS.includes(x as AttractionProvider);
+const isHoursSource = (x: unknown): x is HoursSource => x === 'google' || x === 'tripadvisor' || x === 'openstreetmap';
 
 /**
- * A place to visit, from TripAdvisor (link = the TripAdvisor listing) or Wikidata (link = its
- * Wikipedia article). Both are treated exactly the same way by the planner and the screens.
+ * A place to visit, from TripAdvisor (link = the TripAdvisor listing), Google Places (link = its
+ * Google Maps page), Wikidata (link = its Wikipedia article) or OpenStreetMap. All are treated
+ * exactly the same way by the planner and the screens.
  * `openingHours` follows the spec as a flat [open, close, open, close…] list for a typical day;
  * `weeklyHours` keeps the full week so the planner can respect "closed on Mondays".
  */
@@ -96,6 +110,11 @@ export class Attraction {
     public provider: AttractionProvider = 'tripadvisor',
     public wikidataId = '',
   ) {}
+
+  descriptionSource: DescriptionSource | undefined = undefined;
+  descriptionUrl: string | undefined = undefined;
+  hoursSource: HoursSource | undefined = undefined;
+  ratingSource: 'tripadvisor' | 'google' | undefined = undefined;
 
   /** 0–10 (see AttractionKind.popularityOf). */
   get score(): number {
@@ -134,11 +153,15 @@ export class Attraction {
       kind: this.kind,
       popularity: this.popularity,
       wikidataId: this.wikidataId || undefined,
+      descriptionSource: this.descriptionSource,
+      descriptionUrl: this.descriptionUrl,
+      hoursSource: this.hoursSource,
+      ratingSource: this.ratingSource,
     };
   }
 
   static fromJSON(j: AttractionJSON): Attraction {
-    return new Attraction(
+    const a = new Attraction(
       j.id,
       j.name,
       j.description,
@@ -161,9 +184,15 @@ export class Attraction {
       j.accessibilitySources ?? [],
       isKind(j.kind) ? j.kind : kindFromText(`${j.category ?? ''} ${j.name}`),
       typeof j.popularity === 'number' ? j.popularity : undefined,
-      j.provider === 'wikidata' ? 'wikidata' : 'tripadvisor',
+      isProvider(j.provider) ? j.provider : 'tripadvisor',
       j.wikidataId ?? '',
     );
+    a.descriptionSource = isProvider(j.descriptionSource) || j.descriptionSource === 'wikipedia' ? j.descriptionSource : undefined;
+    a.descriptionUrl = typeof j.descriptionUrl === 'string' ? j.descriptionUrl : undefined;
+    // Hours without a source were checked by the place's own provider (Tripadvisor) in older trips.
+    a.hoursSource = isHoursSource(j.hoursSource) ? j.hoursSource : j.weeklyHours && (j.provider ?? 'tripadvisor') === 'tripadvisor' ? 'tripadvisor' : undefined;
+    a.ratingSource = j.ratingSource === 'google' || j.ratingSource === 'tripadvisor' ? j.ratingSource : undefined;
+    return a;
   }
 }
 

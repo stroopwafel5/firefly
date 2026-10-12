@@ -56,3 +56,13 @@ test('validateEvent rejects online events and photos without a source', () => {
   assert.ok(validateEvent({ ...ok, location: { locLat: 0, locLon: 0 } }).includes('missingMapPin'));
   assert.ok(validateEvent({ ...ok, link: 'not a link' }).includes('missingSourceLink'));
 });
+
+test('uploaded events show in the reader’s language', async () => {
+  const { localizeEventJSON } = await import('../src/models/Event');
+  const base = seedEvents('en')[0].toJSON();
+  const up = { ...base, origin: 'admin' as const, i18n: { name: { en: 'Open House', he: 'בתים מבפנים', ru: 'Открытые дома' }, description: { he: 'סיורים' } } };
+  assert.equal(localizeEventJSON(up, 'he').name, 'בתים מבפנים');
+  assert.equal(localizeEventJSON(up, 'he').description, 'סיורים');
+  assert.equal(localizeEventJSON(up, 'ru').description, base.description, 'missing language → the stored text');
+  assert.equal(localizeEventJSON(base, 'ru').name, base.name, 'events without translations are unchanged');
+});

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LazyMap, MapPin } from '../../components/LazyMap';
+import { LazyMap, MapPin, regionAround } from '../../components/LazyMap';
 import { PressableScale } from '../../components/Accordion';
 import { Text } from '../../components/Text';
 import { useTint } from '../../components/Tint';
@@ -162,6 +162,12 @@ export function DayMapCard({ day }: { day: DayPlan }) {
     if (day.hotel) list.push({ id: 'hotel', lat: day.hotel.locLat, lon: day.hotel.locLon, color: colors.hotel, title: day.hotel.name });
     return { pins: list, line: list.map((p) => ({ lat: p.lat, lon: p.lon })) };
   }, [day]);
+  // Framed on the day's own stops (and its hotel), not on where the day starts: on a travel day
+  // that is the last city (Yerevan), and the map opened there instead of on Tbilisi's sights.
+  const region = useMemo(() => {
+    const stops = pins.filter((p) => p.id !== 'base');
+    return regionAround(stops.length ? stops : pins);
+  }, [pins]);
   if (pins.length < 1) return null;
   return (
     <View style={[styles.card, { backgroundColor: tint.surface, borderColor: tint.line }]}>
@@ -169,7 +175,8 @@ export function DayMapCard({ day }: { day: DayPlan }) {
         <MaterialCommunityIcons name="map-outline" size={22} color={colors.attraction} />
         <Text style={[font.h3, { color: colors.attraction, flex: 1 }]}>{t('plan.dayMap')}</Text>
       </View>
-      <LazyMap pins={pins} line={line} style={{ height: 220 }} />
+      {/* A new map for each day (a map keeps the place it first opened on). */}
+      <LazyMap key={`${day.date.getTime()}:${day.anchorName}`} pins={pins} line={line} initialRegion={region} style={{ height: 220 }} />
     </View>
   );
 }

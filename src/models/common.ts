@@ -59,6 +59,10 @@ export const EVENT_TYPES = [
   'Food',
   'Tour',
   'Kid Friendly',
+  'Shopping',
+  'Beaches',
+  'Extreme Sport',
+  'Night Clubs',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 

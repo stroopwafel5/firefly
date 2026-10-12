@@ -64,3 +64,32 @@ export function buildSearchKeys(userName: string, name: string): string[] {
   }
   return [...keys];
 }
+
+/**
+ * A profile with every list present. Profiles made by earlier versions of the app may lack some
+ * lists (favourite places, friends…); reading one of those crashed the profile page and made
+ * the heart buttons do nothing.
+ */
+export function normalizeUser(data: Partial<UserDoc> | undefined, uid: string): UserDoc {
+  const d = data ?? {};
+  const list = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  return {
+    ...(d as UserDoc),
+    uid: d.uid || uid,
+    userName: d.userName ?? '',
+    searchKeys: list<string>(d.searchKeys),
+    name: d.name ?? '',
+    description: d.description ?? '',
+    dateOfBirth: d.dateOfBirth ?? null,
+    photo: d.photo ?? '',
+    bookedCamps: list<number>(d.bookedCamps),
+    favouriteCamps: list<number>(d.favouriteCamps),
+    bookedEvents: list<string>(d.bookedEvents),
+    favouriteEvents: list<string>(d.favouriteEvents),
+    myTrips: list<string>(d.myTrips),
+    favouriteAttraction: list<string>(d.favouriteAttraction),
+    friends: list<string>(d.friends),
+    language: d.language === 'he' || d.language === 'ru' ? d.language : 'en',
+    createdAt: typeof d.createdAt === 'number' ? d.createdAt : 0,
+  };
+}

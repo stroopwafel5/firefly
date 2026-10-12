@@ -1,4 +1,5 @@
 import { Location, ScheduledItem, WeeklyHours } from '../models';
+import { haversineKm } from './geo';
 import { checkOpen, earliestOpenStart } from './time';
 import { TravelTable } from './travel';
 
@@ -14,7 +15,11 @@ export const MAX_WAIT = 75;
 export const DEFAULT_MAX_ATTRACTIONS = 6;
 /** Minutes kept free before a meal for getting to a restaurant when no restaurant is known. */
 export const MEAL_TRAVEL_ALLOWANCE = 15;
-/** Visits this long (zoos, theme parks) may run through a meal: you eat on site. */
+/**
+ * Visits this long may run through a meal, eaten on site — only where there is food on site
+ * (`Candidate.foodOnSite`: theme parks, zoos, a museum with a café). A long museum visit
+ * without one is planned around the meal instead.
+ */
 export const MEAL_ON_SITE_MIN_VISIT = 180;
 
 export interface Point {
@@ -33,6 +38,8 @@ export interface Candidate extends Point {
   score: number;
   /** Must-see places the traveller picked are always tried first. */
   mustInclude?: boolean;
+  /** Somewhere to eat there (theme park, zoo, a museum café): a long visit may include a meal. */
+  foodOnSite?: boolean;
   /**
    * Greedy route priorities 1–3 (popularity, accessibility fit, type/age fit — see route.ts),
    * compared left to right; priority 4 is the distance from the current point. When candidates
@@ -126,7 +133,7 @@ function feasibleStart(c: Candidate, date: Date, from: number): number | null {
  *     − 2 × (waiting beyond 75 min), among those that are open for the whole visit, end
  *     before the day ends, leave enough time to reach the next fixed-time event, and leave
  *     room for the next meal (visits of 3 h or more that are under way at mealtime may run
- *     through it — the meal is eaten on site).
+ *     through it where there is food on site — the meal is eaten there).
  *  3. If nothing fits, go to the next fixed-time event, or have free time until the next
  *     meal (leaving in time to reach the restaurant when the meal window opens).
  * At most 6 attractions a day. Must-see places get a huge bonus, so they are placed
@@ -278,7 +285,7 @@ export function scheduleDay(input: DayInput): DayResult {
       for (const [meal, win, done] of [['lunch', LUNCH, lunchDone], ['dinner', DINNER, dinnerDone]] as const) {
         if (done || end + brk <= mustEndBy(win, c)) continue;
         const underWayAtMealtime = start <= win.to - win.duration && end >= win.from + win.duration;
-        if (c.kind === 'attraction' && c.duration >= MEAL_ON_SITE_MIN_VISIT && underWayAtMealtime && !mealOnSite) {
+        if (c.foodOnSite && c.duration >= MEAL_ON_SITE_MIN_VISIT && underWayAtMealtime && !mealOnSite) {
           mealOnSite = meal;
         } else {
           blocked = meal === 'lunch' ? 'noRoomForLunch' : 'noRoomForDinner';
@@ -366,6 +373,31 @@ export function scheduleDay(input: DayInput): DayResult {
   }
 
   return { slots, placed, restaurants: restaurantsUsed };
+}
+
+/**
+ * The night out (trips with "Night Clubs"): one club after the day's plan, from 22:00 at the
+ * earliest, for about 2½ hours (1½ when it closes sooner), ending by 01:00 — the latest a day
+ * can end. Only clubs within `maxKm` of where the night is spent, and only when open then.
+ */
+export const NIGHT_OUT = { from: 22 * 60, duration: 150, shortest: 90, latestEnd: 25 * 60, maxKm: 10, maxWait: 90 };
+
+/** The night-out slot at the first club (best first) that fits, or null. */
+export function planNightOut(
+  clubs: ReadonlyArray<Point & { weeklyHours?: WeeklyHours }>,
+  ctx: { date: Date; after: number; from: Point; near: Location; travel: TravelTable },
+): ScheduledItem | null {
+  for (const c of clubs) {
+    if (haversineKm(ctx.near, c.location) > NIGHT_OUT.maxKm) continue;
+    const leg = ctx.travel.leg(ctx.from.id, ctx.from.location, c.id, c.location);
+    const arrive = Math.max(ctx.after + leg.minutes, NIGHT_OUT.from);
+    for (const d of [NIGHT_OUT.duration, NIGHT_OUT.shortest]) {
+      const s = earliestOpenStart(c.weeklyHours, ctx.date, arrive, d);
+      if (s == null || s + d > NIGHT_OUT.latestEnd || s - arrive > NIGHT_OUT.maxWait) continue;
+      return { key: slotKey('attraction', c.id), kind: 'attraction', refId: c.id, start: s, end: s + d, fixed: false, travelBefore: leg };
+    }
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ */

@@ -24,11 +24,14 @@ export interface AccessibilitySource {
   need: Disability;
   /** The page that says so. */
   url: string;
-  /** 'venue' = the site's own website; 'organisation' = a disability or tourism body. */
-  by: 'venue' | 'organisation';
-  /** The organisation's name, for `by: 'organisation'`. */
+  /**
+   * 'venue' = the site's own website; 'organisation' = a disability or tourism body;
+   * 'map' = OpenStreetMap's tags on the place (wheelchair=yes, tactile_paving=yes…).
+   */
+  by: 'venue' | 'organisation' | 'map';
+  /** The organisation's name, for `by: 'organisation'` ("OpenStreetMap" for 'map'). */
   org?: string;
-  /** The words found on the page (for 'venue'). */
+  /** The words found on the page (for 'venue'), or the map's tag (for 'map'). */
   phrase?: string;
   /** When it was last checked (ms). */
   checkedAt?: number;

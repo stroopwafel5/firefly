@@ -127,6 +127,27 @@ test('accessibility: strict with nothing confirmed explains itself instead of an
   await assert.rejects(generateTrip(req({ accessNeeds: ['hearing'], accessStrict: true }), p), (e: unknown) => e instanceof PlannerError && e.code === 'noAccessible');
 });
 
+test('accessibility: strict with nothing confirmed asks first — "plan anyway" plans with every place marked, without asking the server again', async () => {
+  const { p, asked } = setup();
+  const questions: string[][] = [];
+  const trip = await generateTrip(req({ accessNeeds: ['hearing'], accessStrict: true }), p, undefined, undefined, {
+    planWithoutConfirmation: async (needs) => {
+      questions.push(needs);
+      return true;
+    },
+  });
+  assert.deepEqual(questions, [['hearing']]);
+  assert.equal(trip.accessStrict, false, 'the plan says it is not limited to confirmed places');
+  assert.ok(trip.itinerary[0].attractions.length > 0, 'the best places are planned');
+  assert.deepEqual(trip.accessNeeds, ['hearing'], 'each place still says what is and is not confirmed');
+  assert.equal(asked.length, 1, 'the places already found are reused');
+  // Saying no keeps the old answer.
+  await assert.rejects(
+    generateTrip(req({ accessNeeds: ['hearing'], accessStrict: true }), setup().p, undefined, undefined, { planWithoutConfirmation: async () => false }),
+    (e: unknown) => e instanceof PlannerError && e.code === 'noAccessible',
+  );
+});
+
 test('accessibility: ADHD alone (not checkable at venues) only changes the pace, never filters places', async () => {
   const { p, asked } = setup();
   const trip = await generateTrip(req({ accessNeeds: ['adhd'], accessStrict: true }), p);

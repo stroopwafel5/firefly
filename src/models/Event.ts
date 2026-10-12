@@ -1,3 +1,4 @@
+import type { Lang } from '../i18n/localized';
 import { EventType, Location, PhotoSource, Time, isoDay } from './common';
 import { parseLocalDay } from './Camp';
 
@@ -39,6 +40,15 @@ export interface EventJSON {
   origin: EventOrigin;
   sourceName: string;
   createdBy?: string;
+  /** Events uploaded by admins (the upload page) carry their texts in all three languages. */
+  i18n?: { name?: Partial<Record<Lang, string>>; description?: Partial<Record<Lang, string>>; priceText?: Partial<Record<Lang, string>> };
+}
+
+/** The event's name, description and price line in `lang`, when it has them. */
+export function localizeEventJSON(j: EventJSON, lang: Lang): EventJSON {
+  const t = j.i18n;
+  if (!t) return j;
+  return { ...j, name: t.name?.[lang] || j.name, description: t.description?.[lang] || j.description, priceText: t.priceText?.[lang] || j.priceText };
 }
 
 /**

@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable } from 'react-native';
-import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View } from 'react-native';
+import { ProfilePhoto } from '../../components/ProfilePhoto';
 import { Button, Field, Screen, toast } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n';
 import type { RootScreen } from '../../navigation/types';
-import { updateUserProfile, uploadProfilePhoto } from '../../services/userService';
+import { errorCode, updateUserProfile } from '../../services/userService';
 import { colors, space } from '../../theme';
 
 export function EditProfileScreen({ navigation }: RootScreen<'EditProfile'>) {
@@ -20,19 +18,6 @@ export function EditProfileScreen({ navigation }: RootScreen<'EditProfile'>) {
   const [busy, setBusy] = useState(false);
   if (!profile) return null;
 
-  const pickPhoto = async () => {
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-    if (r.canceled || !r.assets?.[0]) return;
-    setBusy(true);
-    try {
-      setPhoto(await uploadProfilePhoto(profile.uid, r.assets[0].uri));
-    } catch {
-      toast(t('common.error'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const save = async () => {
     setBusy(true);
     try {
@@ -44,8 +29,8 @@ export function EditProfileScreen({ navigation }: RootScreen<'EditProfile'>) {
       });
       toast(t('common.saved'));
       navigation.goBack();
-    } catch {
-      toast(t('common.error'));
+    } catch (e) {
+      toast(`${t('common.error')} (${errorCode(e)})`);
     } finally {
       setBusy(false);
     }
@@ -53,9 +38,9 @@ export function EditProfileScreen({ navigation }: RootScreen<'EditProfile'>) {
 
   return (
     <Screen title={t('user.editProfile')} accent={colors.night}>
-      <Pressable onPress={pickPhoto} style={{ alignSelf: 'center', marginBottom: space.lg }} accessibilityLabel={t('user.photo')}>
-        {photo ? <Image source={{ uri: photo }} style={{ width: 110, height: 110, borderRadius: 55 }} /> : <MaterialCommunityIcons name="account-circle" size={110} color={colors.muted} />}
-      </Pressable>
+      <View style={{ alignSelf: 'center', marginBottom: space.lg }}>
+        <ProfilePhoto uid={profile.uid} photo={photo} size={110} onChange={setPhoto} />
+      </View>
       <Field label={t('user.name')} value={name} onChangeText={setName} />
       <Field label={t('user.description')} value={description} onChangeText={setDescription} multiline />
       <Field label={t('user.dateOfBirth')} value={dob} onChangeText={setDob} placeholder="1990-05-31" />

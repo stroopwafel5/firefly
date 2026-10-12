@@ -29,7 +29,10 @@ export const colors = {
 };
 
 /** One colour per trip type (type tiles, badges): never grey. */
-export const typeColors: Record<'Family' | 'Nature' | 'History' | 'Theatre' | 'Festival' | 'Food' | 'Tour' | 'Kid Friendly', string> = {
+export const typeColors: Record<
+  'Family' | 'Nature' | 'History' | 'Theatre' | 'Festival' | 'Food' | 'Tour' | 'Kid Friendly' | 'Shopping' | 'Beaches' | 'Extreme Sport' | 'Night Clubs',
+  string
+> = {
   Nature: '#2E7D32',
   History: '#8D4E1F',
   Theatre: '#AD1457',
@@ -38,6 +41,10 @@ export const typeColors: Record<'Family' | 'Nature' | 'History' | 'Theatre' | 'F
   Tour: '#1565C0',
   Family: '#00838F',
   'Kid Friendly': '#D81B60',
+  Shopping: '#C2185B',
+  Beaches: '#0277BD',
+  'Extreme Sport': '#BF360C',
+  'Night Clubs': '#4527A0',
 };
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };

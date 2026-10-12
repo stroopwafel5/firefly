@@ -1,5 +1,5 @@
 /** Mirrors src/models/Event.ts → EventJSON in the app (keep in sync). */
-export const EVENT_TYPES = ['Family', 'Nature', 'History', 'Theatre', 'Festival', 'Food', 'Tour', 'Kid Friendly'] as const;
+export const EVENT_TYPES = ['Family', 'Nature', 'History', 'Theatre', 'Festival', 'Food', 'Tour', 'Kid Friendly', 'Shopping', 'Beaches', 'Extreme Sport', 'Night Clubs'] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 export interface PhotoSource {
@@ -32,6 +32,20 @@ export interface EventJSON {
   datesConfirmed?: boolean;
   origin: 'curated' | 'admin' | 'ticketmaster' | 'google-events';
   sourceName: string;
+  /** Events uploaded by admins carry their texts in all three languages. */
+  i18n?: { name?: Partial<Record<'en' | 'he' | 'ru', string>>; description?: Partial<Record<'en' | 'he' | 'ru', string>>; priceText?: Partial<Record<'en' | 'he' | 'ru', string>> };
+}
+
+/** The event's name, description and price line in `lang`, when it has them (uploaded events). */
+export function localizeEvent<T extends EventJSON>(e: T, lang: 'en' | 'he' | 'ru'): T {
+  const t = e.i18n;
+  if (!t) return e;
+  return {
+    ...e,
+    name: t.name?.[lang] || e.name,
+    description: t.description?.[lang] || e.description,
+    priceText: t.priceText?.[lang] || e.priceText,
+  };
 }
 
 export interface SearchArgs {
@@ -78,6 +92,10 @@ const TYPE_RULES: Array<[EventType, RegExp]> = [
   ['Food', /food|wine|beer|culinary|tasting|market|street food|chef|אוכל|יין|בירה|שוק|קולינר|ед[аы]|вин|пив|ярмарк|рынок|гастро/i],
   ['Family', /family|kids|children|puppet|zoo|aquarium|משפחה|ילדים|בובות|גן חיות|семей|дет|кукол|зоопарк/i],
   ['Kid Friendly', /kids|children|puppet|zoo|aquarium|ילדים|בובות|גן חיות|дет|кукол|зоопарк/i],
+  ['Night Clubs', /club night|clubbing|night ?club|dj set|techno|house music|\brave\b|מסיבת ריקודים|מועדון|ночн(ой|ая) клуб|клубн/i],
+  ['Extreme Sport', /marathon|triathlon|ironman|motocross|rally|extreme|skydiv|bungee|surf (contest|competition|championship)|race\b|מרתון|טריאתלון|марафон|триатлон|экстрим/i],
+  ['Shopping', /flea market|craft (fair|market)|design market|vintage market|outlet sale|bazaar|שוק פשפשים|יריד|блошин|ярмарк/i],
+  ['Beaches', /beach|חוף|пляж/i],
   ['Tour', /tour|walk|walking|excursion|guided|סיור|הליכה|экскурси|прогулк/i],
   ['History', /museum|history|heritage|exhibition|exhibit|gallery|archae|מוזיאון|היסטור|מורשת|תערוכה|גלריה|музе|истор|выставк|галере/i],
   ['Nature', /nature|hike|garden|park|bird|forest|beach|טבע|טיול רגלי|גן |פארק|ציפור|природ|поход|сад|парк|птиц/i],
@@ -94,3 +112,23 @@ export const EUR_PER: Record<string, number> = {
   DKK: 0.134, RON: 0.2, RSD: 0.0085, JPY: 0.0062, KRW: 0.00068, AUD: 0.6, CAD: 0.68, MXN: 0.05, BRL: 0.17,
   ZAR: 0.05, GHS: 0.06, NGN: 0.0006, IDR: 0.000057, AED: 0.25, TRY: 0.026, THB: 0.026, GEL: 0.34, AMD: 0.0024,
 };
+
+/**
+ * Can this event be kept for someone's profile? It is one the app showed them, so only what the
+ * profile needs is checked (a name, dates, a map pin, a real link), not everything a new event
+ * needs to be published (photos with credits…): favourites of events without a credited photo
+ * were refused, and then vanished from the profile once they left the search results.
+ */
+export function savableEvent(e: unknown): e is EventJSON {
+  const x = e as Partial<EventJSON> | null;
+  if (!x || typeof x !== 'object' || typeof x.id !== 'string' || !x.id || x.id.length > 300) return false;
+  if (typeof x.name !== 'string' || !x.name.trim()) return false;
+  if (typeof x.startDate !== 'string' || typeof x.endDate !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(x.startDate)) return false;
+  const loc = x.location as { locLat?: unknown; locLon?: unknown } | undefined;
+  if (!loc || !Number.isFinite(loc.locLat) || !Number.isFinite(loc.locLon)) return false;
+  if (typeof x.link !== 'string' || !/^https?:\/\/\S+\.\S+/.test(x.link)) return false;
+  return JSON.stringify(x).length < 30_000;
+}
+
+/** Firestore document ids can't contain "/" (some providers' ids do); the `id` field keeps the real one. */
+export const savedEventDocId = (id: string) => id.replace(/[/]/g, '_').replace(/^\.+$/, '_').slice(0, 400);

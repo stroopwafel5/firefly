@@ -28,7 +28,7 @@ export const config = {
   functionsRegion: extra.functionsRegion ?? 'europe-west1',
   bookingsEmail: extra.bookingsEmail ?? 'dubinanna@gmail.com',
   /** Wikimedia asks API clients to identify themselves. */
-  wikiUserAgent: 'Firefly/1.0 (https://www.differentroute.net)',
+  wikiUserAgent: 'FireflyTravelApp/1.0 (Different Route; https://www.differentroute.net) react-native',
   /** Default "near me" radius for the Weekend tab when no place is typed. */
   defaultEventRadiusKm: 100,
   /** False until a Firebase project is set in .env: the app then runs on its built-in content. */

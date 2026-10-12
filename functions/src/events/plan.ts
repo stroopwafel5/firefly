@@ -5,6 +5,74 @@ import type { EventJSON } from './types';
 export const ISRAEL_TARGET = 50;
 export const WORLD_TARGET = 100;
 
+/**
+ * The weekly list by region: how many events each keeps and the cities searched for them.
+ * Europe leans on the Netherlands, Belgium, Germany, Czechia and Poland (Firefly's main markets);
+ * South Africa leads the Africa list. "world" is everywhere else (the Americas, Oceania, Korea,
+ * the Gulf, the Caucasus).
+ */
+export type Region = 'israel' | 'europe' | 'japan' | 'seasia' | 'africa' | 'world';
+
+export const REGION_TARGETS: Record<Region, number> = { israel: ISRAEL_TARGET, europe: 500, japan: 100, seasia: 100, africa: 100, world: WORLD_TARGET };
+
+export const EUROPE_CITIES = [
+  // Netherlands
+  'Amsterdam', 'Rotterdam', 'The Hague', 'Utrecht', 'Eindhoven', 'Maastricht', 'Groningen', 'Haarlem', 'Leiden', 'Delft',
+  // Belgium
+  'Brussels', 'Antwerp', 'Ghent', 'Bruges', 'Liège', 'Leuven', 'Mechelen',
+  // Germany
+  'Berlin', 'Munich', 'Hamburg', 'Cologne', 'Frankfurt', 'Dresden', 'Leipzig', 'Nuremberg', 'Stuttgart', 'Düsseldorf', 'Heidelberg', 'Bremen', 'Hanover',
+  // Czechia
+  'Prague', 'Brno', 'Český Krumlov', 'Ostrava', 'Olomouc', 'Karlovy Vary', 'Plzeň',
+  // Poland
+  'Warsaw', 'Kraków', 'Wrocław', 'Gdańsk', 'Poznań', 'Łódź', 'Toruń', 'Zakopane',
+  // The rest of Europe
+  'Vienna', 'Salzburg', 'Budapest', 'Bratislava', 'Paris', 'Lyon', 'Strasbourg', 'London', 'Edinburgh', 'Dublin', 'Barcelona',
+  'Madrid', 'Seville', 'Rome', 'Milan', 'Florence', 'Venice', 'Lisbon', 'Porto', 'Athens', 'Thessaloniki', 'Copenhagen',
+  'Stockholm', 'Oslo', 'Helsinki', 'Zurich', 'Geneva', 'Bucharest', 'Sofia', 'Plovdiv', 'Belgrade', 'Ljubljana', 'Zagreb',
+  'Riga', 'Tallinn', 'Vilnius', 'Chișinău', 'Skopje', 'Valletta', 'Luxembourg',
+];
+
+export const JAPAN_CITIES = ['Tokyo', 'Yokohama', 'Osaka', 'Kyoto', 'Kobe', 'Nara', 'Nagoya', 'Sapporo', 'Fukuoka', 'Hiroshima', 'Sendai', 'Kanazawa', 'Naha, Okinawa', 'Hakone', 'Nikko'];
+
+export const SEASIA_CITIES = [
+  'Bangkok', 'Chiang Mai', 'Phuket', 'Pattaya', 'Singapore', 'Kuala Lumpur', 'George Town, Penang', 'Ubud, Bali', 'Jakarta', 'Yogyakarta',
+  'Ho Chi Minh City', 'Hanoi', 'Da Nang', 'Hoi An', 'Manila', 'Cebu City', 'Phnom Penh', 'Siem Reap', 'Luang Prabang', 'Vientiane',
+];
+
+export const AFRICA_CITIES = [
+  // South Africa first
+  'Cape Town', 'Johannesburg', 'Pretoria', 'Durban', 'Gqeberha', 'Stellenbosch', 'Knysna',
+  'Windhoek', 'Gaborone', 'Victoria Falls', 'Maputo', 'Port Louis, Mauritius', 'Nairobi', 'Mombasa', 'Zanzibar', 'Dar es Salaam',
+  'Arusha', 'Kigali', 'Kampala', 'Addis Ababa', 'Accra', 'Lagos', 'Dakar', 'Marrakech', 'Casablanca', 'Cairo', 'Tunis',
+];
+
+export const OTHER_WORLD_CITIES = [
+  'New York', 'Los Angeles', 'Toronto', 'Vancouver', 'Mexico City', 'Managua', 'Lima', 'Buenos Aires', 'Rio de Janeiro',
+  'Sydney', 'Melbourne', 'Auckland', 'Seoul', 'Taipei', 'Hong Kong', 'Dubai', 'Istanbul', 'Tbilisi', 'Yerevan',
+];
+
+export const REGION_CITIES: Record<Region, string[]> = {
+  israel: [],
+  europe: EUROPE_CITIES,
+  japan: JAPAN_CITIES,
+  seasia: SEASIA_CITIES,
+  africa: AFRICA_CITIES,
+  world: OTHER_WORLD_CITIES,
+};
+
+/** How long the weekly list looks ahead: four weeks (trips are planned weeks ahead). */
+export const SNAPSHOT_DAYS = 28;
+
+/** Tomorrow and the next four weeks, with their Friday–Sunday days (weekend events come first). */
+export function snapshotWindow(now = new Date()): { from: string; to: string; days: string[] } {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const iso = (x: Date) => x.toISOString().slice(0, 10);
+  const day = (n: number) => new Date(d.getTime() + n * 86_400_000);
+  const all = Array.from({ length: SNAPSHOT_DAYS }, (_, i) => day(i + 1));
+  return { from: iso(all[0]), to: iso(all[all.length - 1]), days: all.filter((x) => [5, 6, 0].includes(x.getUTCDay())).map(iso) };
+}
+
 export const ISRAEL_CITIES = [
   'Tel Aviv', 'Jerusalem', 'Haifa', "Be'er Sheva", 'Eilat', 'Netanya', 'Rishon LeZion', 'Herzliya',
   'Ashdod', 'Nazareth', 'Tiberias', "Ra'anana", 'Petah Tikva', "Modi'in", 'Akko', 'Zikhron Ya\'akov',
@@ -24,9 +92,13 @@ export const WORLD_CITIES = [
  * the only real source. With the free SerpApi plan they are covered in a weekly rotation.
  */
 export const TM_WEAK_CITIES = [
-  'Accra', 'Lagos', 'Nairobi', 'Managua', 'Bali', 'Jakarta', 'Bangkok', 'Tbilisi', 'Yerevan', 'Chișinău',
-  'Skopje', 'Belgrade', 'Bucharest', 'Istanbul', 'Marrakech', 'Buenos Aires', 'Rio de Janeiro', 'Tokyo',
-  'Sapporo', 'Seoul', 'Athens', 'Budapest', 'Lisbon',
+  // Japan, South-East Asia and Africa first: Ticketmaster has (almost) nothing there.
+  'Tokyo', 'Cape Town', 'Bangkok', 'Osaka', 'Johannesburg', 'Singapore', 'Kyoto', 'Durban', 'Kuala Lumpur', 'Sapporo', 'Nairobi',
+  'Ubud, Bali', 'Fukuoka', 'Pretoria', 'Ho Chi Minh City', 'Hanoi', 'Accra', 'Lagos', 'Manila', 'Marrakech', 'Chiang Mai', 'Zanzibar',
+  'Jakarta', 'Kigali', 'Phnom Penh', 'Cairo', 'Hiroshima', 'Windhoek',
+  // Other places Ticketmaster covers poorly
+  'Managua', 'Tbilisi', 'Yerevan', 'Chișinău', 'Skopje', 'Belgrade', 'Bucharest', 'Sofia', 'Istanbul', 'Buenos Aires',
+  'Rio de Janeiro', 'Seoul', 'Athens', 'Budapest', 'Lisbon',
 ];
 
 /**

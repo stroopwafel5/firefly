@@ -1,7 +1,7 @@
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { EventJSON, validateEvent } from './events/types';
+import { EventJSON, savableEvent, savedEventDocId } from './events/types';
 import { requireAuth, requireString } from './util';
 
 /**
@@ -74,9 +74,10 @@ export const respondFriendRequest = onCall(async (req) => {
 });
 
 async function storeEvent(event: unknown): Promise<EventJSON> {
-  const e = event as EventJSON;
-  if (!e || typeof e !== 'object' || validateEvent(e).length) throw new HttpsError('invalid-argument', 'Event failed validation');
-  await db().collection('savedEvents').doc(e.id).set({ ...e, savedAt: Date.now() }, { merge: true });
+  if (!savableEvent(event)) throw new HttpsError('invalid-argument', 'Event failed validation');
+  // JSON round trip: no undefined values (Firestore refuses them).
+  const e = JSON.parse(JSON.stringify(event)) as EventJSON;
+  await db().collection('savedEvents').doc(savedEventDocId(e.id)).set({ ...e, savedAt: Date.now() }, { merge: true });
   return e;
 }
 

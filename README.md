@@ -122,7 +122,8 @@ src/
   planner/                   the trip planner: pure TypeScript, no network (unit-tested)
     generator.ts               whole trip: day bases, pools, scoring, per-day loop
     scheduler.ts               one day: greedy builder, meals, drag & drop checks
-    route.ts (where each day is; the greedy order), classify.ts, geo.ts, time.ts, travel.ts, kidify.ts, dayEdit.ts
+    route.ts (where each day is; the greedy order), classify.ts, geo.ts, time.ts, travel.ts, kidify.ts, dayEdit.ts,
+    safety.ts (closed areas never planned; warnings for PA towns, Ukraine, Crimea), describe.ts
   services/                  Firebase, typed Cloud Function calls, events, bookings, social, Wikipedia
   screens/                   camps/, weekend/, planner/, user/
   components/                photo carousel with credits, date picker, time-range slider, signature pad…
@@ -131,18 +132,26 @@ functions/src/               Cloud Functions (all third-party keys live here)
   google.ts                    geocoding, road route, travel-time matrix (Routes API)
   tripadvisor.ts               Tripadvisor Terra API: attractions, restaurants, hotels, photos, reviews;
                                adds new areas to the account's allowlist (+ tripadvisorMap.ts)
-  attractions/                 free backup sources: Wikidata attractions (live + 5,000-place Europe list,
-                               refreshed nightly), OpenStreetMap restaurants; merging with Tripadvisor
-  rateGate.ts                  keeps Tripadvisor under its requests-per-second limit, pauses after a 429
+  attractions/                 the other sight sources: Google Places (worldwide, with opening hours),
+                               Wikidata (live + 10,000-place Europe list, refreshed nightly), OpenStreetMap
+                               sights (with their hours; unlinked ones in quiet areas) and restaurants;
+                               merging all of them with Tripadvisor (merge.ts)
+  rateGate.ts, terraLimiter.ts keep Tripadvisor under its limits: 1 search a second for the whole key
+                               (shared schedule in Firestore), the plan's limit for everything else
   hotels/                      hotelsNear: Agoda → Google Hotels → TripAdvisor, one search per stay
   serpBudget.ts                keeps SerpApi within its monthly searches (free plan: 250)
   geo/nominatim.ts             OpenStreetMap fallback geocoder
-  events/                      live event search (SerpApi Google events, Ticketmaster, admin events),
-                               validation, weekly 150-event fallback (50 in Israel)
+  events/                      live event search (SerpApi Google events, Ticketmaster, admin events, the
+                               weekly web search), validation, the weekly ~950-event list (Israel 50,
+                               Europe 500, Japan / South-East Asia / Africa 100 each, elsewhere 100);
+                               scout*.ts: the weekly Claude web search for outdoor and family events
+  events/upload/               the weekly-list upload: txt parser, page reader, Claude extraction and
+                               translation, passcode; eventsUpload + processEventsUpload
   paypal.ts, bookings.ts       payments and booking e-mails
   social.ts, misc.ts           friends, notifications, "I'm going", kids' rewording, photo reports
 scripts/                     seedFirestore.ts, setAdmin.ts, explainTrip.ts, checkApis.ts (live key check),
                              pushSecrets.mjs (keys → Secret Manager), agodaCity.ts (Agoda city ids)
+hosting/upload.html          the admins' events upload page (Firebase Hosting: <project>.web.app/upload)
 tests/, functions/test/      unit tests (node:test)
 firestore.rules, storage.rules, firestore.indexes.json
 ```
@@ -157,7 +166,8 @@ firestore.rules, storage.rules, firestore.indexes.json
                                    users, chats, bookings, cache)
                               ──►  Storage (passports, avatars)
                               ──►  Cloud Functions (europe-west1) ──► Tripadvisor Terra API
-                                                                  ──► Google Geocoding + Routes
+                                                                  ──► Google Geocoding + Routes + Places
+                                                                  ──► Wikidata, OpenStreetMap (free)
                                                                       (OpenStreetMap if no key)
                                                                   ──► SerpApi (Google events,
                                                                       Google Hotels prices)
@@ -202,12 +212,16 @@ Trips last 1–30 days. Day by day, a greedy route walks from the start city tow
 or 7.0+ ones that fit the traveller's types, ages and accessibility needs, never more than 4 days
 (world cities like Paris and London excepted), then moves to the next big city within a day's
 travel (GeoNames list, bundled), with a day of its own for a world-class landmark on the way
-(Plitvice). Attractions come from Tripadvisor merged with Wikidata (free backup, plus a 5,000-place
-Europe-wide list), all on one 0–10 popularity scale, and each day takes them in this order:
-popularity → accessibility fit → type/age fit → distance from the previous point. Each day is then
-timed hour by hour with real travel times (Google Routes), opening hours, meals (Tripadvisor, or
-OpenStreetMap when Tripadvisor is busy) and fixed-time events; one hotel per stay. The plan shows a
-map of the whole route and a map of each day. The full explanation is in
+(Plitvice). It never goes to places nobody can enter (the Gaza Strip, North Korea) or across a
+closed border, and warns about Palestinian Authority towns, Ukraine and Crimea. Attractions come
+from Tripadvisor merged with Google Places, Wikidata and OpenStreetMap (searching wider around quiet
+towns, plus a 10,000-place Europe-wide list), all on one 0–10 popularity scale, and each day takes
+them in this order: popularity → accessibility fit → type/age fit → distance from the previous
+point. Events are mixed in — one a day where there is plenty to see, more where there is little.
+Each day is then timed hour by hour with real travel times (Google Routes), opening hours (checked
+with Google, Tripadvisor or OpenStreetMap), meals (Tripadvisor, or OpenStreetMap when Tripadvisor is
+busy) and events; one hotel per stay. Places with only a one-line description get their Wikipedia
+article's introduction. The plan shows a map of the whole route and a map of each day. The full explanation is in
 [HOW_TO_TEST.md §6](HOW_TO_TEST.md#6-how-firefly-builds-a-trip).
 
 ## Data model: the spec and where Firefly differs
@@ -242,9 +256,10 @@ Firestore stores `UserDoc` (ids, not nested objects) and the app resolves them.
 | Load or update the camp catalogue (and prices PayPal charges) | `npm run seed` (edit `src/data/camps.ts` first) |
 | Make someone an admin | `npm run set-admin -- email@example.com` (they sign in again) |
 | Add an event | In the app: Weekend → *Add an event* (admins only) |
+| Add the weekly events list | Upload the .txt at `https://dreamroute-firefly.web.app/upload` with the admins' passcode (HOW_TO_TEST.md §5.4) |
 | Rebuild the offline events now | Call `refreshFallbackNow` with an admin token (HOW_TO_TEST.md §5.2) |
-| Build / rebuild the 5,000-attraction backup list | `npm run attractions:build` (safe to stop and rerun; the server refreshes old entries every night) |
-| Tripadvisor's speed limit | `TRIPADVISOR_QPS` in `functions/.env` = your Terra plan's queries per second, then deploy the functions |
+| Build / rebuild the 10,000-attraction backup list | `npm run attractions:build` (safe to stop and rerun; the server refreshes old entries every night) |
+| Tripadvisor's speed limit | Searches: 1 a second for the whole key, shared by all servers through Firestore (`functions/src/terraLimiter.ts`); details, photos and reviews: `TRIPADVISOR_QPS` in `functions/.env` (your plan's limit per second), then deploy the functions |
 | Review reported photos | Firestore `photoReports`; delete `hiddenPhotos/<id>` to restore a photo |
 | Broken camp pages | `checkCampPages` runs daily; see Firestore `campPageStatus` |
 | Check that every API key still works | `npm run check:apis` (add `--no-serp` to save SerpApi searches) |
@@ -284,6 +299,12 @@ otherwise come from TripAdvisor with a pre-filled Booking.com search.
   the old Content API, which was switched off on 31 Aug 2026, to Terra. Not yet run live: run
   `npm run check:apis -- --only tripadvisor`.
 - **PayPal:** couldn't be reached from the build machine; run `npm run check:apis -- --only paypal`.
+
+**Google Places terms to confirm:** Google allows storing only place IDs (and coordinates for 30
+days). The server never stores Google's place details, but a **saved trip** keeps the name,
+summary, hours and photo link of each Google place in it, like the Tripadvisor ones below. If that
+turns out not to be allowed, saved trips can keep the place ID and re-fetch the details when opened.
+Google's photos must keep their author credit (Firefly shows it on every photo).
 
 **Tripadvisor terms to confirm:**
 - **Storage:** Terra's caching policy allows storing only place IDs unless your contract says
